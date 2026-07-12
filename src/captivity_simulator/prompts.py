@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from .configuration import render_placeholders
+from .engine import ACTION_CONTENTS, ACTION_LABELS, TOOL_LABELS, TRAINING_CONTENTS
 
 
 PENDING_RULES = {
@@ -25,11 +25,63 @@ PENDING_RULES = {
     "recapture_followup_choice": "选择抓回后的后续处理。第一行使用【后续处理：action=punishment intensity=medium】。",
 }
 
+_CONTENT_LABELS = {
+    content_id: label
+    for options in ACTION_CONTENTS.values()
+    for content_id, label in options.items()
+}
+
 
 def _assistant_view(payload: dict[str, Any]) -> dict[str, Any]:
     captor = payload.get("captor_view") if isinstance(payload.get("captor_view"), dict) else {}
     captive = payload.get("captive_view") if isinstance(payload.get("captive_view"), dict) else {}
     return captor if str(captor.get("captor") or "") == "assistant" else captive
+
+
+def _current_event_lines(pending: dict[str, Any]) -> list[str]:
+    event = pending.get("event") if isinstance(pending.get("event"), dict) else {}
+    lines: list[str] = []
+    action = str(event.get("action") or "").strip()
+    action_label = str(event.get("action_label") or ACTION_LABELS.get(action) or action).strip()
+    if action_label:
+        lines.append("行动：" + action_label)
+    intensity = str(event.get("intensity") or "").strip()
+    if intensity:
+        lines.append("强度：" + intensity)
+    contents = [str(item) for item in event.get("contents") or [] if str(item).strip()]
+    if contents:
+        lines.append("具体内容：" + " / ".join(_CONTENT_LABELS.get(item, item) for item in contents))
+    training = [str(item) for item in event.get("training_contents") or [] if str(item).strip()]
+    if training:
+        lines.append("调教内容：" + " / ".join(TRAINING_CONTENTS.get(item, item) for item in training))
+    tools = [str(item) for item in event.get("tools") or [] if str(item).strip()]
+    if tools:
+        lines.append("道具：" + " / ".join(TOOL_LABELS.get(item, item) for item in tools))
+    night_detail = event.get("night_detail") if isinstance(event.get("night_detail"), dict) else {}
+    if str(night_detail.get("label") or "").strip():
+        lines.append("夜间动向：" + str(night_detail.get("label")).strip())
+    bell_voice = event.get("bell_voice") if isinstance(event.get("bell_voice"), dict) else {}
+    if str(bell_voice.get("line") or "").strip():
+        lines.append("语音铃播放：「" + str(bell_voice.get("line")).strip() + "」")
+    item_secret = pending.get("item_secret") if isinstance(pending.get("item_secret"), dict) else {}
+    if str(item_secret.get("text") or "").strip():
+        lines.append("本次发现：" + str(item_secret.get("text")).strip())
+    line = str(event.get("line") or "").strip()
+    if line:
+        lines.append("囚禁方台词：" + line)
+    action_response = event.get("action_response") if isinstance(event.get("action_response"), dict) else {}
+    if action_response:
+        response_bits = [
+            str(action_response.get("response_label") or action_response.get("response") or "").strip(),
+            str(action_response.get("mood") or "").strip(),
+            str(action_response.get("line") or "").strip(),
+        ]
+        lines.append("已记录回应：" + " / ".join(item for item in response_bits if item))
+    hint = str(pending.get("hint") or "").strip()
+    bait = str(pending.get("bait") or "").strip()
+    if hint or bait:
+        lines.append("逃跑机会：" + " / ".join(item for item in (hint, bait) if item))
+    return lines
 
 
 def build_assistant_prompt(payload: dict[str, Any], config: dict[str, Any], message: str = "") -> str:
@@ -42,14 +94,25 @@ def build_assistant_prompt(payload: dict[str, Any], config: dict[str, Any], mess
     opening = str(openings.get(route) or "")
     process_style = str(prompt_config.get("process_style") or "")
     extra_rules = prompt_config.get("extra_rules") if isinstance(prompt_config.get("extra_rules"), list) else []
-    parts = [opening, "", "【游戏状态】", json.dumps(view, ensure_ascii=False, indent=2)]
-    if message.strip():
-        parts.extend(["", "【{user}刚刚在游戏里说】", message.strip()])
-    if pending:
-        parts.extend(["", "【当前事件】", json.dumps(pending, ensure_ascii=False, indent=2)])
+    game_text = str(payload.get("text") or payload.get("player_text") or "").strip()
+    parts = [opening, "", "【当前游戏状态】", game_text]
+    event_lines = _current_event_lines(pending)
+    if event_lines:
+        parts.extend(["", "【当前事件素材】", *event_lines])
     rule = PENDING_RULES.get(pending_type)
     if rule:
-        parts.extend(["", "【menu】", rule])
+        parts.extend(["", "【当前待办】", rule])
+    available_actions = [str(item).strip() for item in pending.get("available_actions") or [] if str(item).strip()]
+    if available_actions:
+        parts.append("当前可选：" + " / ".join(available_actions))
+    condition_prompt = str(pending.get("condition_prompt") or "").strip()
+    if condition_prompt:
+        parts.append(condition_prompt)
+    required_directive = str(pending.get("required_directive") or "").strip()
+    if required_directive and required_directive not in (rule or ""):
+        parts.append("回复格式：" + required_directive)
+    if pending_type == "day_plan_choice":
+        parts.extend(["需要具体行动内容、调教、道具或喂食参数时，按需调用 captivity_simulator_reference。"])
     if pending_type in {"process_write", "process_reaction_write"} and process_style:
         parts.extend(["", process_style])
     if extra_rules:

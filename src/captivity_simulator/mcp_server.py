@@ -8,6 +8,7 @@ from typing import Any
 from .configuration import load_config, render_placeholders
 from .engine import run_command
 from .projection import project_payload
+from .reference import get_reference, reference_tool_schema
 from .server import _save_path
 
 
@@ -15,6 +16,7 @@ SERVER_NAME = "captivity-simulator-mcp"
 SERVER_VERSION = "0.1.0"
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 TOOL_NAME = "captivity_simulator"
+REFERENCE_TOOL_NAME = "captivity_simulator_reference"
 RESOURCE_URI = "captivity-simulator://save/default"
 
 
@@ -78,6 +80,15 @@ def _tool_definition() -> dict[str, Any]:
     }
 
 
+def _reference_tool_definition() -> dict[str, Any]:
+    schema = reference_tool_schema()["function"]
+    return {
+        "name": schema["name"],
+        "description": schema["description"],
+        "inputSchema": schema["parameters"],
+    }
+
+
 def _configured_status(save_id: str) -> dict[str, Any]:
     payload = run_command("status", save_path=_save_path(save_id))
     return render_placeholders(project_payload(payload, "assistant", include_commands=True, include_engine_text=True), load_config())
@@ -86,6 +97,15 @@ def _configured_status(save_id: str) -> dict[str, Any]:
 def _call_tool(params: Any) -> dict[str, Any]:
     body = _params_object(params)
     name = str(body.get("name") or "")
+    if name == REFERENCE_TOOL_NAME:
+        arguments = body.get("arguments") or {}
+        if not isinstance(arguments, dict):
+            raise RpcError(-32602, "Invalid params: tool arguments must be an object")
+        reference = get_reference(str(arguments.get("category") or ""))
+        return {
+            "content": [{"type": "text", "text": _json_dump(reference)}],
+            "structuredContent": reference,
+        }
     if name != TOOL_NAME:
         raise RpcError(-32602, f"Unknown tool: {name or '<missing>'}")
 
@@ -141,7 +161,7 @@ def _dispatch(method: str, params: Any) -> dict[str, Any]:
     if method in {"notifications/initialized", "ping"}:
         return {}
     if method == "tools/list":
-        return {"tools": [_tool_definition()]}
+        return {"tools": [_tool_definition(), _reference_tool_definition()]}
     if method == "tools/call":
         return _call_tool(params)
     if method == "resources/list":

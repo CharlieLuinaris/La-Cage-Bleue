@@ -6,10 +6,23 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from captivity_simulator.mcp_server import RESOURCE_URI, TOOL_NAME, handle_request
+from captivity_simulator.mcp_server import REFERENCE_TOOL_NAME, RESOURCE_URI, TOOL_NAME, handle_request
 
 
 class McpServerTest(unittest.TestCase):
+    def test_lists_and_calls_read_only_reference_tool(self) -> None:
+        listed = handle_request({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
+        names = [item["name"] for item in listed["result"]["tools"]]
+        self.assertIn(REFERENCE_TOOL_NAME, names)
+
+        called = handle_request({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": REFERENCE_TOOL_NAME, "arguments": {"category": "feeding"}},
+        })
+        self.assertIn("source", called["result"]["structuredContent"])
+
     def test_lists_simulator_tool(self) -> None:
         response = handle_request({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
         self.assertIsNotNone(response)

@@ -56,9 +56,10 @@ def create_app() -> Flask:
         save_id = str(body.get("save_id") or "default")
         config = load_config()
         payload = run_command("status", save_path=_save_path(save_id))
-        prompt = build_assistant_prompt(payload, config, str(body.get("message") or ""))
+        player_message = str(body.get("message") or "")
+        prompt = build_assistant_prompt(payload, config)
         try:
-            reply_text = request_assistant(prompt, config)
+            reply_text = request_assistant(prompt, config, player_message=player_message)
         except AdapterError as exc:
             response = _configured_result(project_payload(payload, "user"), config)
             response.update({"ok": False, "error": str(exc), "sync_result": "adapter_required"})

@@ -75,7 +75,8 @@ class EngineTest(unittest.TestCase):
             self.assertEqual(assistant_pending["type"], "bell_response_choice")
             self.assertEqual(assistant_pending["event"]["bell_voice"]["line"], "每次都要播放这句")
             prompt = build_assistant_prompt(acknowledged, config)
-            self.assertIn('"line": "每次都要播放这句"', prompt)
+            self.assertIn("语音铃播放：「每次都要播放这句」", prompt)
+            self.assertNotIn('"pending_event"', prompt)
 
     def test_used_items_reveal_one_trace_per_use(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
