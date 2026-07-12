@@ -4861,8 +4861,12 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         .captivity-game .warehouse-name {
             position: relative;
             z-index: 1;
+            max-width: 100%;
             font-size: 12px;
             font-weight: 800;
+            line-height: 1.25;
+            overflow-wrap: anywhere;
+            text-align: center;
         }
         .captivity-game .warehouse-use {
             position: relative;
