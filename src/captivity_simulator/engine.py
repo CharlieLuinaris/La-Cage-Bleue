@@ -3184,7 +3184,7 @@ def _change_inventory_items(state: dict[str, Any], args: dict[str, Any], *, enab
     secret_content = str(args.get("secret") or args.get("easter_egg") or args.get("彩蛋") or "").strip()
     progressive_item = items[0] if len(items) == 1 and items[0] in PROGRESSIVE_SECRET_ITEMS else ""
     secret_entries = (
-        [line.strip() for line in secret_content.splitlines() if line.strip()]
+        [entry.strip() for entry in re.split(r"\r?\n|\s*\|\|\s*", secret_content) if entry.strip()]
         if progressive_item
         else ([secret_content] if secret_content else [])
     )

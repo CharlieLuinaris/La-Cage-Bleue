@@ -84,7 +84,7 @@ class EngineTest(unittest.TestCase):
             rejected = run_command("gift_item items=book secret='只有一条'", save_path)
             self.assertFalse(rejected["ok"])
             gifted = run_command(
-                "gift_item items=book secret='第 12 页有折角\n书签停在最后一章\n封底写过日期\n中间夹着旧书签\n扉页留着签名'",
+                "gift_item items=book secret='第 12 页有折角 || 书签停在最后一章 || 封底写过日期 || 中间夹着旧书签 || 扉页留着签名'",
                 save_path,
             )
             self.assertTrue(gifted["ok"])
