@@ -3182,6 +3182,12 @@ def _change_inventory_items(state: dict[str, Any], args: dict[str, Any], *, enab
     inventory_secrets = state.get("inventory_secrets") if isinstance(state.get("inventory_secrets"), dict) else {}
     voice_line = str(args.get("voice_line") or args.get("voice") or "").strip()
     secret_content = str(args.get("secret") or args.get("easter_egg") or args.get("彩蛋") or "").strip()
+    new_progressive_items = [
+        item for item in items
+        if item in PROGRESSIVE_SECRET_ITEMS and enabled and not bool(inventory.get(item))
+    ]
+    if new_progressive_items and len(items) != 1:
+        return False, ["使用过的物品需要逐件赠送，并分别填写 5 至 8 条使用痕迹。"]
     progressive_item = items[0] if len(items) == 1 and items[0] in PROGRESSIVE_SECRET_ITEMS else ""
     secret_entries = (
         [entry.strip() for entry in re.split(r"\r?\n|\s*\|\|\s*", secret_content) if entry.strip()]

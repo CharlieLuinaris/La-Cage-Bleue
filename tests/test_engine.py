@@ -81,6 +81,8 @@ class EngineTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             save_path = Path(directory) / "book.json"
             run_command("new_game route=captured_by_assistant", save_path)
+            batch_rejected = run_command("gift_item items=book,notebook", save_path)
+            self.assertFalse(batch_rejected["ok"])
             rejected = run_command("gift_item items=book secret='只有一条'", save_path)
             self.assertFalse(rejected["ok"])
             gifted = run_command(
