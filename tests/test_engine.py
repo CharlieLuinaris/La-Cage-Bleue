@@ -122,13 +122,20 @@ class EngineTest(unittest.TestCase):
             run_command("new_game route=captured_by_assistant", save_path)
             batch_rejected = run_command("gift_item items=book,notebook", save_path)
             self.assertFalse(batch_rejected["ok"])
-            rejected = run_command("gift_item items=book secret='只有一条'", save_path)
+            missing_title = run_command(
+                "gift_item items=book secret='第一条 || 第二条 || 第三条 || 第四条 || 第五条'",
+                save_path,
+            )
+            self.assertFalse(missing_title["ok"])
+            rejected = run_command("gift_item items=book book_title='夜航船' secret='只有一条'", save_path)
             self.assertFalse(rejected["ok"])
             gifted = run_command(
-                "gift_item items=book secret='第 12 页有折角 || 书签停在最后一章 || 封底写过日期 || 中间夹着旧书签 || 扉页留着签名'",
+                "gift_item items=book book_title='夜航船' secret='第 12 页有折角 || 书签停在最后一章 || 封底写过日期 || 中间夹着旧书签 || 扉页留着签名'",
                 save_path,
             )
             self.assertTrue(gifted["ok"])
+            self.assertEqual(gifted["captor_view"]["inventory_secrets"]["book"]["title"], "夜航船")
+            self.assertEqual(gifted["captive_view"]["inventory_secrets"]["book"]["title"], "夜航船")
             self.assertEqual(len(gifted["captor_view"]["inventory_secrets"]["book"]["entries"]), 5)
             self.assertEqual(gifted["captive_view"]["inventory_secrets"]["book"]["revealed_count"], 0)
 
@@ -136,6 +143,9 @@ class EngineTest(unittest.TestCase):
             first = run_command("night_action action=read detail=inspect_margins", save_path)
             first_secret = first["captive_view"]["pending_event"]["item_secret"]
             self.assertEqual((first_secret["sequence"], first_secret["total"]), (1, 5))
+            self.assertEqual(first_secret["item_label"], "《夜航船》")
+            self.assertEqual(first["captive_view"]["pending_event"]["event"]["action_label"], "看《夜航船》")
+            self.assertIn("翻开《夜航船》", first_secret["text"])
             self.assertIn("第 12 页有折角", first_secret["text"])
             run_command("ack_item_secret", save_path)
 
