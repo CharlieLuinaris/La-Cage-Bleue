@@ -3900,6 +3900,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             --gray: #2A2A2A;
             --safe-top: env(safe-area-inset-top, 0px);
             --safe-bottom: env(safe-area-inset-bottom, 0px);
+            --footer-bar-height: calc(56px + var(--safe-bottom));
             --font-display: "Times New Roman", serif;
             --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
             position: fixed;
@@ -3911,7 +3912,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             font-family: var(--font-ui);
             font-size: 13px;
             line-height: 1.2;
-            overflow-y: auto;
+            overflow-y: hidden;
             overflow-x: hidden;
             overscroll-behavior-y: contain;
             letter-spacing: -0.02em;
@@ -3938,10 +3939,18 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         .captivity-game .cross { position: absolute; pointer-events: none; }
         .captivity-game .cross::before { content: '+'; color: var(--pink); font-size: 14px; }
         .captivity-game .screen {
+            position: absolute;
+            inset: 0;
             display: none;
-            min-height: 100dvh;
-            padding: calc(var(--safe-top) + 18px) 20px calc(var(--safe-bottom) + 178px);
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            padding: calc(var(--safe-top) + 18px) 20px calc(var(--footer-bar-height) + 122px);
             flex-direction: column;
+            overflow-y: auto;
+            overflow-x: hidden;
+            overscroll-behavior-y: contain;
+            -webkit-overflow-scrolling: touch;
         }
         .captivity-game .screen.active { display: flex; }
         .captivity-game .bootstrap-screen {
@@ -4533,8 +4542,8 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             position: fixed;
             left: 0;
             right: 0;
-            bottom: 38px;
-            z-index: 510;
+            bottom: var(--footer-bar-height);
+            z-index: 610;
             margin-top: 0;
             padding: 8px 14px 10px;
             background: linear-gradient(to top, var(--black) 70%, rgba(18, 18, 18, 0));
@@ -5408,7 +5417,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         }
         @keyframes captivityRotate { 100% { transform: rotate(90deg); } }
         .captivity-game .footer {
-            position: fixed;
+            position: absolute;
             bottom: 0;
             left: 0;
             width: 100%;
@@ -5416,9 +5425,9 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             border-top: 1px solid var(--gray);
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            min-height: calc(56px + var(--safe-bottom));
+            min-height: var(--footer-bar-height);
             padding: 6px 0 calc(6px + var(--safe-bottom));
-            z-index: 500;
+            z-index: 620;
         }
         .captivity-game .footer-item {
             display: flex;
