@@ -2408,6 +2408,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
   const sceneTransitionTimerRef = useRef<number | null>(null);
   const previewSyncReadyAtRef = useRef(0);
   const lastFailedRetryRef = useRef<(() => void) | null>(null);
+  const mainScreenRef = useRef<HTMLElement | null>(null);
   const [hasFailedRetry, setHasFailedRetry] = useState(false);
   const processPreviewRole = readProcessPreviewRole();
   const planPreviewRole = readPlanPreviewRole();
@@ -2670,6 +2671,11 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
     setNightDetail((current) => options.some((item) => item.id === current) ? current : (options[0]?.id || ""));
     if (nightAction !== "diary") setNightNote("");
   }, [activeNightDetailOptionsKey, nightAction]);
+
+  useEffect(() => {
+    if (screen !== "game") return;
+    mainScreenRef.current?.scrollTo({ top: 0, behavior: "auto" });
+  }, [footerTab, screen]);
 
   useEffect(() => {
     if (view.intensity_cap !== "medium") return;
@@ -3620,7 +3626,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         </button>
       </section>
 
-      <section id={role === "captor" ? "master-screen" : "captive-screen"} className={`screen ${!bootstrapping && screen === "game" && !monitorRoomOpen && !inventoryRoomOpen ? "active" : ""}`}>
+      <section ref={mainScreenRef} id={role === "captor" ? "master-screen" : "captive-screen"} className={`screen ${!bootstrapping && screen === "game" && !monitorRoomOpen && !inventoryRoomOpen ? "active" : ""}`}>
         <div className="header">
           <div className="day-big">{view.total_days || 30}</div>
           <div className="header-meta">
@@ -5430,20 +5436,36 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             z-index: 620;
         }
         .captivity-game .footer-item {
+            position: relative;
             display: flex;
             align-items: center;
             justify-content: center;
             min-height: 44px;
-            padding: 0 8px;
+            padding: 0 8px 5px;
             text-align: center;
-            font-size: 10px;
+            font-size: 11px;
             text-transform: uppercase;
             opacity: 0.6;
             background: transparent;
             border: 0;
             color: var(--white);
+            outline: none;
+            box-shadow: none;
+            -webkit-tap-highlight-color: transparent;
         }
+        .captivity-game .footer-item:focus,
+        .captivity-game .footer-item:focus-visible { outline: none; box-shadow: none; }
         .captivity-game .footer-item.active { opacity: 1; color: var(--pink); }
+        .captivity-game .footer-item.active::after {
+            content: "♥";
+            position: absolute;
+            bottom: 3px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: var(--pink);
+            font-size: 6px;
+            line-height: 1;
+        }
         .captivity-game .coord { font-size: 9px; color: #444; position: fixed; }
         .captivity-game .vertical-text {
             writing-mode: vertical-rl;
