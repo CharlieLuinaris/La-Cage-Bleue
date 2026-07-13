@@ -2572,7 +2572,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
 
   const eventLog = useMemo(() => view.event_log || [], [view.event_log]);
   const latestEvent = eventLog[eventLog.length - 1];
-  const currentEvent = pending?.event || latestEvent;
+  const currentEvent = pending?.event || (pendingType === "escape_choice" ? undefined : latestEvent);
   const availableNightActions = view.available_night_actions?.length
     ? view.available_night_actions
     : pending?.available_actions?.length
@@ -3284,12 +3284,17 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
     const waitingForAssistantNext = String(nextView.pending_event?.actor || "") === "assistant";
     const endingNext = String(nextView.phase || "") === "ending" || nextPendingType.startsWith("ending_") || Boolean(nextView.ending_state);
     if (!force && !waitingForAssistantNext && !endingNext) return false;
-    const runSync = () => syncAssistant(endingNext ? "ending" : "state_update", next, background, playerMessage);
+    const runSync = (syncInBackground = background) => syncAssistant(endingNext ? "ending" : "state_update", next, syncInBackground, playerMessage);
     const scene = nextView.scene_copy;
     const sceneKey = String(scene?.key || "");
     if (scene && sceneKey && sceneKey !== lastSceneKeyRef.current) {
       lastSceneKeyRef.current = sceneKey;
-      playSceneTransition(scene, runSync);
+      if (nextPendingType === "escape_choice") {
+        playSceneTransition(scene);
+        runSync(true);
+      } else {
+        playSceneTransition(scene, runSync);
+      }
       return true;
     }
     runSync();
@@ -3797,7 +3802,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
       () => executeCaptivityCommand(
         `${enabled ? "gift_item" : "revoke_item"} items=${itemId}${enabled && itemId === "book" ? ` book_title=${quoteArg(title)}` : ""}${enabled && itemId === "call_bell" ? ` voice_line=${quoteArg(secret)}` : enabled && secret ? ` secret=${quoteArg(secret)}` : ""}`,
       ),
-    ).then((next) => continueAutomaticSync(next, true));
+    ).then((next) => continueAutomaticSync(next));
   }
 
   function closeSubpage() {
@@ -6235,7 +6240,7 @@ function RuntimePanel({
               </div>
               <div className="event-main">
                 {pendingType === "escape_choice" && waitingForAssistant
-                  ? "逃跑诱导已经送达{assistant}。"
+                  ? "等待{assistant}选择逃跑回应。"
                   : isRecaptureDecision
                     ? pendingLabel(pending, role)
                     : event.line || event.action_label || publicDirectiveText(pending?.required_directive, pending, role) || (isEnding ? "30 天闭环已完成，等待结局。" : "等待下一段事件。")}
@@ -6423,7 +6428,7 @@ function renderEventSummary(event: CaptivityEvent, pending: CaptivityPending | n
     feedingRows.length ? `喂食：${feedingRows.join(" / ")}` : "",
     event.action_response?.response_label ? `回应：${event.action_response.response_label} / 心情：${event.action_response.mood || "未选"}` : "",
     event.post_reaction?.mood ? `此刻心情：${event.post_reaction.mood}` : "",
-    event.monitor?.viewed ? `监控：${event.monitor.style || "view"} / ${event.monitor.handle || "未处理"}` : "",
+    event.monitor?.viewed ? `监控：${monitorStyleLabel(event.monitor.style)} / ${monitorHandleLabel(event.monitor.handle)}` : "",
     intervention.intent ? `当场介入：${intervention.intent_label || interventionIntentLabel(intervention.intent)}` : "",
     intervention.modifiers?.length ? `介入附加：${intervention.modifiers.map(interventionModifierLabel).join(" / ")}` : "",
     intervention.training_contents?.length ? `介入调教：${intervention.training_contents.map(trainingContentLabel).join(" / ")}` : "",

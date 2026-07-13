@@ -108,6 +108,232 @@ class ServerTest(unittest.TestCase):
                 self.assertEqual(len(assistant_calls), 1)
                 self.assertEqual(night["state"]["pending_event"]["type"], "night_action_choice")
 
+    def test_scheduled_escape_is_delivered_as_a_bounded_followup_chain(self) -> None:
+        app = create_app()
+
+        def payload(pending: dict) -> dict:
+            state = {
+                "route": "capture_assistant",
+                "captor": "user",
+                "captive": "assistant",
+                "current_day": 2,
+                "total_days": 30,
+                "day_action_count": 0,
+                "phase": "day",
+                "stats": {"health": 80, "stamina": 70, "cleanliness": 70, "shame": 20, "intimacy": 20},
+                "pending_event": pending,
+                "event_log": [],
+            }
+            return {
+                "ok": True,
+                "state": state,
+                "captor_view": {**state, "viewer": "captor"},
+                "captive_view": {**state, "viewer": "captive"},
+            }
+
+        night_event = {
+            "id": "night-process",
+            "day": 1,
+            "slot": 0,
+            "phase": "night",
+            "action": "training",
+            "action_label": "夜间介入",
+            "tags": ["night"],
+        }
+        escape_event = {
+            "id": "escape-process",
+            "day": 2,
+            "slot": 0,
+            "phase": "day",
+            "action": "escape_choice",
+            "action_label": "逃跑诱导：尝试逃跑",
+            "tags": ["escape", "recapture"],
+        }
+        payloads = [
+            payload({"type": "process_reaction_write", "actor": "assistant", "event": night_event}),
+            payload({"type": "escape_choice", "actor": "assistant", "hint": "今天出去了", "bait": "钥匙在玄关"}),
+            payload({"type": "process_reaction_write", "actor": "assistant", "event": escape_event}),
+            payload({"type": "recapture_rules_choice", "actor": "user", "event": escape_event}),
+        ]
+        commands: list[str] = []
+        replies = iter([
+            "【过程心情：回应=接受 心情=平静】\n【过程】\n【【昨晚的经过。】】",
+            "【选择：尝试逃跑】",
+            "【过程心情：回应=拒绝 心情=烦躁】\n【过程】\n【【抓回经过。】】",
+        ])
+
+        def fake_run(command: str, save_path: Path) -> dict:
+            if command == "status":
+                return payloads[0]
+            commands.append(command)
+            return payloads[len(commands)]
+
+        with patch("captivity_simulator.server.run_command", side_effect=fake_run), patch(
+            "captivity_simulator.server.request_assistant",
+            side_effect=lambda *args, **kwargs: next(replies),
+        ):
+            with app.test_client() as client:
+                response = client.post("/api/game/sync-assistant", json={"save_id": "escape"})
+
+        result = response.get_json()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(commands), 3)
+        self.assertTrue(commands[0].startswith("submit_process_reaction "))
+        self.assertEqual(commands[1], "resolve_escape_choice escape")
+        self.assertTrue(commands[2].startswith("submit_process_reaction "))
+        self.assertEqual(result["state"]["pending_event"]["type"], "recapture_rules_choice")
+
+    def test_high_risk_night_followups_finish_without_manual_retry(self) -> None:
+        def payload(pending_type: str, actor: str, *, route: str) -> dict:
+            pending = {"type": pending_type, "actor": actor} if pending_type else None
+            state = {
+                "route": route,
+                "captor": "assistant" if route == "captured_by_assistant" else "user",
+                "captive": "user" if route == "captured_by_assistant" else "assistant",
+                "current_day": 2,
+                "total_days": 30,
+                "day_action_count": 0,
+                "phase": "night" if pending_type in {"monitor_gate", "monitor_handle", "bell_response_choice", "night_action_choice", "item_secret_reveal"} else "day",
+                "stats": {"health": 80, "stamina": 70, "cleanliness": 70, "shame": 20, "intimacy": 20},
+                "pending_event": pending,
+                "event_log": [],
+            }
+            return {
+                "ok": True,
+                "state": state,
+                "captor_view": {**state, "viewer": "captor"},
+                "captive_view": {**state, "viewer": "captive"},
+            }
+
+        scenarios = [
+            {
+                "name": "monitor_skip_to_next_plan",
+                "route": "captured_by_assistant",
+                "types": [("monitor_gate", "assistant"), ("day_plan_choice", "assistant"), ("action_response", "user")],
+                "replies": [
+                    "【选择：不看】",
+                    "【今日安排：action=feeding || action=cleaning || action=rest contents=quiet_time】",
+                ],
+            },
+            {
+                "name": "opened_monitor_to_next_plan",
+                "route": "captured_by_assistant",
+                "types": [("monitor_gate", "assistant"), ("monitor_handle", "assistant"), ("day_plan_choice", "assistant"), ("action_response", "user")],
+                "replies": [
+                    "【查看监控：全程看】",
+                    "【选择：看见但不说】",
+                    "【今日安排：action=feeding || action=cleaning || action=rest contents=quiet_time】",
+                ],
+            },
+            {
+                "name": "bell_skip_to_next_plan",
+                "route": "captured_by_assistant",
+                "types": [("bell_response_choice", "assistant"), ("day_plan_choice", "assistant"), ("action_response", "user")],
+                "replies": [
+                    "【选择：不过去】",
+                    "【今日安排：action=feeding || action=cleaning || action=rest contents=quiet_time】",
+                ],
+            },
+            {
+                "name": "two_item_discoveries",
+                "route": "capture_assistant",
+                "types": [("night_action_choice", "assistant"), ("item_secret_reveal", "assistant"), ("item_secret_reveal", "assistant"), ("monitor_gate", "user")],
+                "replies": ["【夜间行动：action=sleep】", "【确认彩蛋】", "【确认彩蛋】"],
+            },
+        ]
+
+        for scenario in scenarios:
+            with self.subTest(scenario=scenario["name"]):
+                payloads = [payload(item_type, actor, route=scenario["route"]) for item_type, actor in scenario["types"]]
+                commands: list[str] = []
+                replies = iter(scenario["replies"])
+
+                def fake_run(command: str, save_path: Path) -> dict:
+                    if command == "status":
+                        return payloads[0]
+                    commands.append(command)
+                    return payloads[len(commands)]
+
+                with patch("captivity_simulator.server.run_command", side_effect=fake_run), patch(
+                    "captivity_simulator.server.request_assistant",
+                    side_effect=lambda *args, **kwargs: next(replies),
+                ):
+                    with create_app().test_client() as client:
+                        response = client.post("/api/game/sync-assistant", json={"save_id": scenario["name"]})
+
+                result = response.get_json()
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(len(commands), len(scenario["replies"]))
+                self.assertEqual(result["state"]["pending_event"]["type"], scenario["types"][-1][0])
+
+    def test_gifting_does_not_force_an_unrelated_assistant_sync(self) -> None:
+        source = (Path(__file__).resolve().parents[1] / "web" / "src" / "CaptivitySimulator.tsx").read_text(encoding="utf-8")
+        gift_block = source.split("function applyInventoryItem", 1)[1].split("function closeSubpage", 1)[0]
+        self.assertIn("gift_item", gift_block)
+        self.assertNotIn("continueAutomaticSync(next, true)", gift_block)
+        self.assertIn("continueAutomaticSync(next)", gift_block)
+
+    def test_assistant_reply_cannot_advance_a_user_owned_pending(self) -> None:
+        def payload(route: str, pending_type: str, actor: str, *, inventory: dict | None = None) -> dict:
+            state = {
+                "route": route,
+                "captor": "assistant" if route == "captured_by_assistant" else "user",
+                "captive": "user" if route == "captured_by_assistant" else "assistant",
+                "current_day": 2,
+                "total_days": 30,
+                "day_action_count": 1,
+                "phase": "night" if pending_type == "monitor_gate" else "day",
+                "stats": {"health": 80, "stamina": 70, "cleanliness": 70, "shame": 20, "intimacy": 20},
+                "inventory": inventory or {},
+                "pending_event": {"type": pending_type, "actor": actor},
+                "event_log": [],
+            }
+            return {
+                "ok": True,
+                "state": state,
+                "captor_view": {**state, "viewer": "captor"},
+                "captive_view": {**state, "viewer": "captive"},
+            }
+
+        monitor_payload = payload("capture_assistant", "monitor_gate", "user")
+        monitor_commands: list[str] = []
+
+        def monitor_run(command: str, save_path: Path) -> dict:
+            if command == "status":
+                return monitor_payload
+            monitor_commands.append(command)
+            raise AssertionError(f"user-owned monitor should not execute assistant command: {command}")
+
+        with patch("captivity_simulator.server.run_command", side_effect=monitor_run), patch(
+            "captivity_simulator.server.request_assistant",
+            return_value="【查看监控：全程看】",
+        ):
+            with create_app().test_client() as client:
+                monitor_response = client.post("/api/game/sync-assistant", json={"save_id": "local-monitor", "message": "我还没选择"})
+        self.assertEqual(monitor_response.status_code, 200)
+        self.assertEqual(monitor_commands, [])
+        self.assertEqual(monitor_response.get_json()["state"]["pending_event"]["type"], "monitor_gate")
+
+        before_gift = payload("captured_by_assistant", "action_response", "user")
+        after_gift = payload("captured_by_assistant", "action_response", "user", inventory={"notebook": True})
+        gift_commands: list[str] = []
+
+        def gift_run(command: str, save_path: Path) -> dict:
+            if command == "status":
+                return before_gift
+            gift_commands.append(command)
+            return after_gift
+
+        with patch("captivity_simulator.server.run_command", side_effect=gift_run), patch(
+            "captivity_simulator.server.request_assistant",
+            return_value="【赠送物品：notebook】",
+        ):
+            with create_app().test_client() as client:
+                gift_response = client.post("/api/game/sync-assistant", json={"save_id": "out-of-band-gift", "message": "局内附言"})
+        self.assertEqual(gift_response.status_code, 200)
+        self.assertEqual(gift_commands, ["gift_item items=notebook"])
+        self.assertEqual(gift_response.get_json()["state"]["pending_event"]["type"], "action_response")
+
 
 if __name__ == "__main__":
     unittest.main()
