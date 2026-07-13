@@ -165,6 +165,7 @@ type CaptivityPending = {
     total?: number;
   };
   event?: CaptivityEvent;
+  events?: CaptivityEvent[];
 };
 
 type DayPlanSpec = {
@@ -1689,6 +1690,7 @@ const COMMAND_ARG_PATTERN = /\b(?:action|intensity|intent|modifiers|tools|conten
 
 const PENDING_LABELS: Record<string, string> = {
   day_plan_choice: "安排今天的三段行动。",
+  day_batch_response: "等待被囚禁方一次写完今天三段回应。",
   action_response: "选择你的回应和此刻心情。",
   process_write: "等待{assistant}补写这一段过程。",
   process_reaction_write: "等待{assistant}写下回应、过程和心情。",
@@ -1709,6 +1711,7 @@ const PENDING_LABELS: Record<string, string> = {
 };
 
 const CAPTOR_WAITING_LABELS: Record<string, string> = {
+  day_batch_response: "等待{assistant}一次写完今天三段回应。",
   action_response: "等待{assistant}选择回应和此刻心情。",
   process_write: "等待{assistant}补写这一段过程。",
   process_reaction_write: "等待{assistant}提交回应、过程和心情。",
@@ -3056,7 +3059,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
       isReturnActionPlanner ? "正在确定回来后的行为..." : "正在下发今日安排...",
       "SYNC_RESULT: PENDING",
       () => executeCaptivityCommand(isReturnActionPlanner ? buildReturnActionCommand() : buildPlanCommand()),
-    ).then((next) => continueAutomaticSync(next, Boolean(playerLine), false, playerLine));
+    ).then((next) => continueAutomaticSync(next, false, false, playerLine));
   }
 
   function submitResponse() {
@@ -3400,7 +3403,13 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
           () => executeCaptivityCommand("advance_day_action"),
         ).then((next) => {
           if (!next) return;
-          playNextStageForPayload(next);
+          const review = findNewProcessReview(next, payload);
+          if (review) {
+            setProcessReview(review);
+            setFooterTab("history");
+          } else {
+            playNextStageForPayload(next);
+          }
           continueAutomaticSync(next);
         });
       } else if (payload) {
@@ -3431,8 +3440,14 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
       () => executeCaptivityCommand("advance_day_action"),
     ).then((next) => {
       if (!next) return;
-      const playerLine = textLine(viewFromPayload(next).pending_event?.event?.line);
-      continueAutomaticSync(next, Boolean(playerLine), false, playerLine);
+      const review = findNewProcessReview(next, payload);
+      if (review) {
+        setProcessReview(review);
+        setFooterTab("history");
+      } else {
+        playNextStageForPayload(next);
+      }
+      continueAutomaticSync(next);
     });
   }
 

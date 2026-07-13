@@ -54,6 +54,53 @@ class ServerTest(unittest.TestCase):
         self.assertIn("captor_view", captor)
         self.assertNotIn("captive_view", captor)
 
+    def test_capture_assistant_day_batch_uses_one_assistant_sync(self) -> None:
+        app = create_app()
+        assistant_calls: list[str] = []
+
+        def fake_assistant(prompt: str, _config: dict, player_message: str = "") -> str:
+            assistant_calls.append(prompt)
+            return (
+                "【第1段：response=accept mood=平静 line=】\n第一段简短回应。\n"
+                "【第2段：response=bargain mood=烦躁 line=别得意】\n"
+                "【过程2】\n【【第二段完整经过。】】\n"
+                "【第3段：response=silent mood=疲惫 line=】\n第三段简短回应。"
+            )
+
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "captivity_simulator.server._save_path",
+            side_effect=lambda save_id: Path(directory) / f"{save_id}.json",
+        ), patch("captivity_simulator.server.request_assistant", side_effect=fake_assistant):
+            with app.test_client() as client:
+                client.post("/api/game/command", json={"save_id": "batch", "command": "new_game route=capture_assistant"})
+                planned = client.post(
+                    "/api/game/command",
+                    json={
+                        "save_id": "batch",
+                        "command": (
+                            "plan_day action=feeding source=cook additive=none || "
+                            "action=training training_contents=obedience_commands modifiers=training tools=collar || "
+                            "action=cleaning"
+                        ),
+                    },
+                ).get_json()
+                self.assertEqual(planned["state"]["pending_event"]["type"], "day_batch_response")
+                first = client.post("/api/game/sync-assistant", json={"save_id": "batch"}).get_json()
+                self.assertEqual(len(assistant_calls), 1)
+                self.assertEqual(first["state"]["pending_event"]["type"], "advance_action")
+                second = client.post(
+                    "/api/game/command",
+                    json={"save_id": "batch", "command": "advance_day_action"},
+                ).get_json()
+                self.assertEqual(len(assistant_calls), 1)
+                self.assertEqual(second["state"]["pending_event"]["type"], "advance_action")
+                third = client.post(
+                    "/api/game/command",
+                    json={"save_id": "batch", "command": "advance_day_action"},
+                ).get_json()
+                self.assertEqual(len(assistant_calls), 1)
+                self.assertEqual(third["state"]["pending_event"]["type"], "night_action_choice")
+
 
 if __name__ == "__main__":
     unittest.main()

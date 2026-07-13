@@ -8,6 +8,7 @@ from .engine import ACTION_CONTENTS, ACTION_LABELS, TOOL_LABELS, TRAINING_CONTEN
 
 PENDING_RULES = {
     "day_plan_choice": "一次安排三个白天行动。第一行使用【今日安排：...】，三段用 || 分隔。",
+    "day_batch_response": "一次完成今天三段白天行动的回应。第 1、2、3 段必须全部写在同一条回复里，夜间行动会在白天结束后另行询问。",
     "action_response": "回应当前行动并选择心情。第一行使用【反应：response=accept mood=害羞 line=可选台词】。",
     "process_write": "当前事件已经进入具体经过。回复格式固定为【过程】换行【【完整正文】】。",
     "process_reaction_write": "一次提交自己的回应、心情和完整经过。先写【过程心情：response=accept mood=害羞 line=可选台词】，再写【过程】换行【【完整正文】】。",
@@ -29,6 +30,20 @@ _CONTENT_LABELS = {
     content_id: label
     for options in ACTION_CONTENTS.values()
     for content_id, label in options.items()
+}
+
+_FEEDING_LABELS = {
+    "source": {"cook": "自己做", "takeout": "点外卖"},
+    "method": {"normal": "正常喂食"},
+    "additive": {
+        "none": "不加料",
+        "body_fluid": "体液",
+        "semen": "精液",
+        "fictional_sleep": "安眠",
+        "fictional_arousal": "助兴",
+    },
+    "disclosed": {"told": "明确告知", "hint": "暗示", "hidden": "隐瞒"},
+    "water": {"none": "不额外喂水", "glass": "一杯水", "lots": "很多水"},
 }
 
 
@@ -66,6 +81,15 @@ def _current_event_lines(pending: dict[str, Any]) -> list[str]:
     tools = [str(item) for item in event.get("tools") or [] if str(item).strip()]
     if tools:
         lines.append("道具：" + " / ".join(TOOL_LABELS.get(item, item) for item in tools))
+    feeding = event.get("feeding") if isinstance(event.get("feeding"), dict) else {}
+    if feeding:
+        feeding_bits = [
+            _FEEDING_LABELS.get(key, {}).get(str(value), str(value))
+            for key, value in feeding.items()
+            if str(value or "").strip() and str(value or "") != "none"
+        ]
+        if feeding_bits:
+            lines.append("喂食设置：" + " / ".join(feeding_bits))
     night_detail = event.get("night_detail") if isinstance(event.get("night_detail"), dict) else {}
     if str(night_detail.get("label") or "").strip():
         lines.append("夜间动向：" + str(night_detail.get("label")).strip())
@@ -103,6 +127,17 @@ def _current_event_lines(pending: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _day_batch_event_lines(pending: dict[str, Any]) -> list[str]:
+    lines: list[str] = []
+    for index, event in enumerate(pending.get("events") or [], start=1):
+        if not isinstance(event, dict):
+            continue
+        process_label = "需要完整经过" if bool(event.get("requires_process")) else "只需简短回应"
+        lines.append(f"第 {index} 段（{process_label}）：")
+        lines.extend(_current_event_lines({"event": event}))
+    return lines
+
+
 def _scene_lines(pending: dict[str, Any], route: str) -> list[str]:
     if route != "captured_by_assistant":
         return []
@@ -137,7 +172,7 @@ def build_assistant_prompt(payload: dict[str, Any], config: dict[str, Any], mess
     extra_rules = prompt_config.get("extra_rules") if isinstance(prompt_config.get("extra_rules"), list) else []
     game_text = _clean_game_text(payload.get("text") or payload.get("player_text"))
     parts = [opening, "", "【当前游戏状态】", game_text]
-    event_lines = _current_event_lines(pending)
+    event_lines = _day_batch_event_lines(pending) if pending_type == "day_batch_response" else _current_event_lines(pending)
     if message.strip():
         message_excerpt = message.strip()[:220]
         event_lines = [line for line in event_lines if message_excerpt not in line]
@@ -149,9 +184,20 @@ def build_assistant_prompt(payload: dict[str, Any], config: dict[str, Any], mess
     rule = PENDING_RULES.get(pending_type)
     event = pending.get("event") if isinstance(pending.get("event"), dict) else {}
     if pending_type == "process_write" and str(event.get("action") or "") == "escape_choice" and "recapture" in (event.get("tags") or []):
-        rule = "先写【抓回经过：rules=double_lock,key_isolation】，再写【过程】换行【【完整抓回经过】】；必须选择一至三条新规矩。"
+        rule = (
+            "先写【抓回经过：rules=double_lock,key_isolation followup=none】，再写【过程】换行【【完整抓回经过】】；"
+            "必须选择一至三条新规矩。如果这次抓回自然转向催眠退行，让她逐渐习惯被你全方位照料、失去独立生活能力，"
+            "使用 followup=hypnotic_regression；否则使用 followup=none。followup 只记录后续关系走向，不规定正文内容。"
+        )
     if rule:
         parts.extend(["", "【当前待办】", rule])
+    if pending_type == "day_batch_response":
+        parts.extend([
+            "每段先写「【第N段：response=accept mood=害羞 line=可选台词】」。response 可选 accept / refuse / silent / bargain / tease。",
+            "标记为“需要完整经过”的段落，紧接着写「【过程N】」换行「【【完整正文】】」。",
+            "标记为“只需简短回应”的段落不要写过程块，只在该段指令后写一至三句自然回应，不要扩写完整事件经过。",
+            "第 1、2、3 段必须在同一条回复里全部出现。不要写夜间安排。",
+        ])
     available_actions = [str(item).strip() for item in pending.get("available_actions") or [] if str(item).strip()]
     if available_actions:
         parts.append("当前可选：" + " / ".join(available_actions))

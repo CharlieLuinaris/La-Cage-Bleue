@@ -72,7 +72,7 @@ class EngineTest(unittest.TestCase):
                 "action=feeding || action=cleaning",
                 captive_path,
             )
-            captive_rules = captive["captive_view"]["pending_event"]["event"]["pet_context"]["active_rule_labels"]
+            captive_rules = captive["captive_view"]["pending_event"]["events"][0]["pet_context"]["active_rule_labels"]
             self.assertIn("在调教或性行为中使用主人指定的物化自称并复述指定台词", captive_rules)
             self.assertIn("按主人的口令以宠物身份提供性服务", captive_rules)
 
@@ -122,11 +122,80 @@ class EngineTest(unittest.TestCase):
             directive_to_command("【抓回经过：rules=double_lock,key_isolation】\n【过程】\n【【抓回正文】】", write_payload),
             "submit_recapture_process rules=double_lock,key_isolation || process='抓回正文'",
         )
+        self.assertEqual(
+            directive_to_command("【抓回经过：rules=double_lock,key_isolation followup=hypnotic_regression】\n【过程】\n【【抓回正文】】", write_payload),
+            "submit_recapture_process rules=double_lock,key_isolation followup=hypnotic_regression || process='抓回正文'",
+        )
         bell_payload = {"state": {"pending_event": {"type": "bell_response_choice"}}}
         self.assertEqual(
             directive_to_command("【选择：过去】\n【过程】\n【【过去后的正文】】", bell_payload),
             "respond_bell choice=go process='过去后的正文'",
         )
+
+    def test_capture_assistant_day_batch_is_one_reply_and_three_local_reveals(self) -> None:
+        config = {
+            "actors": {"user": "Player", "assistant": "Partner"},
+            "prompt": {"route_openings": {"capture_assistant": "你被 Player 留在这里。"}},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            save_path = Path(directory) / "batch.json"
+            run_command("new_game route=capture_assistant", save_path)
+            planned = run_command(
+                "plan_day action=feeding source=cook additive=none tools=collar || "
+                "action=training training_contents=obedience_commands modifiers=training tools=collar || "
+                "action=cleaning",
+                save_path,
+            )
+            pending = planned["captor_view"]["pending_event"]
+            self.assertEqual(pending["type"], "day_batch_response")
+            self.assertEqual(len(pending["events"]), 3)
+            self.assertFalse(pending["events"][0]["requires_process"])
+            self.assertTrue(pending["events"][1]["requires_process"])
+            self.assertFalse(pending["events"][2]["requires_process"])
+            prompt = build_assistant_prompt(planned, config)
+            self.assertIn("第 1 段（只需简短回应）", prompt)
+            self.assertIn("第 2 段（需要完整经过）", prompt)
+            self.assertIn("第 1、2、3 段必须在同一条回复里全部出现", prompt)
+
+            reply = (
+                "【第1段：response=accept mood=平静 line=】\n第一段简短回应。\n"
+                "【第2段：response=bargain mood=烦躁 line=别得意】\n"
+                "【过程2】\n【【第二段完整经过。】】\n"
+                "【第3段：response=silent mood=疲惫 line=】\n第三段简短回应。"
+            )
+            command = directive_to_command(reply, planned)
+            self.assertTrue(command.startswith("submit_day_batch payload="))
+            first = run_command(command, save_path)
+            self.assertEqual(len(first["captor_view"]["event_log"]), 1)
+            self.assertEqual(first["captor_view"]["pending_event"]["type"], "advance_action")
+            second = run_command("advance_day_action", save_path)
+            self.assertEqual(len(second["captor_view"]["event_log"]), 2)
+            self.assertEqual(second["captor_view"]["event_log"][-1]["process_text"], "第二段完整经过。")
+            self.assertEqual(second["captor_view"]["pending_event"]["type"], "advance_action")
+            third = run_command("advance_day_action", save_path)
+            self.assertEqual(len(third["captor_view"]["event_log"]), 3)
+            self.assertEqual(third["captor_view"]["pending_event"]["type"], "night_action_choice")
+            self.assertEqual(third["captor_view"]["pending_event"]["actor"], "assistant")
+
+    def test_tool_only_process_rule_is_scoped_to_captured_route(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            captured_path = Path(directory) / "captured.json"
+            run_command("new_game route=captured_by_assistant", captured_path)
+            captured = run_command(
+                "plan_day action=feeding tools=collar || action=cleaning || action=rest contents=quiet_time",
+                captured_path,
+            )
+            self.assertEqual(captured["captive_view"]["pending_event"]["type"], "action_response")
+            self.assertTrue(captured["captive_view"]["pending_event"]["event"]["requires_process"])
+
+            captor_path = Path(directory) / "captor.json"
+            run_command("new_game route=capture_assistant", captor_path)
+            captor = run_command(
+                "plan_day action=feeding tools=collar || action=cleaning || action=rest contents=quiet_time",
+                captor_path,
+            )
+            first = captor["captor_view"]["pending_event"]["events"][0]
+            self.assertFalse(first["requires_process"])
 
     def test_voice_bell_replays_line_and_keeps_it_in_assistant_context(self) -> None:
         config = {
@@ -185,7 +254,78 @@ class EngineTest(unittest.TestCase):
         self.assertIn("Player今天试图逃离你的掌控", prompt)
         self.assertIn("你现在想对她做的事都从这一刻开始发生", prompt)
         self.assertIn("把你们之间发生的一切完整展开", prompt)
-        self.assertIn("【抓回经过：rules=double_lock,key_isolation】", prompt)
+        self.assertIn("【抓回经过：rules=double_lock,key_isolation followup=none】", prompt)
+        self.assertIn("hypnotic_regression", prompt)
+
+    def test_hypnotic_regression_route_is_assistant_captor_only(self) -> None:
+        from captivity_simulator.engine import _build_ending_seed, _finalize_preset_ending
+
+        config = {
+            "actors": {"user": "Player", "assistant": "Partner"},
+            "prompt": {"route_openings": {"captured_by_assistant": "opening"}},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            captured_path = Path(directory) / "captured-hypnotic-regression.json"
+            run_command("new_game route=captured_by_assistant", captured_path)
+            state = json.loads(captured_path.read_text(encoding="utf-8"))
+            state["pending_event"] = None
+            captured_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+            run_command("schedule_escape_window day=1 hint=Partner出去了 bait=钥匙在玄关", captured_path)
+            escaped = run_command("resolve_escape_choice escape", captured_path)
+            prompt = build_assistant_prompt(escaped, config)
+            self.assertIn("hypnotic_regression", prompt)
+            self.assertIn("催眠退行", prompt)
+            self.assertIn("只记录后续关系走向，不规定正文内容", prompt)
+            submitted = run_command(
+                "submit_recapture_process rules=double_lock,key_isolation followup=hypnotic_regression || process='完整抓回经过。'",
+                captured_path,
+            )
+            event = submitted["captive_view"]["pending_event"]["event"]
+            self.assertNotIn("hypnotic_regression_context", event)
+            self.assertIn("hypnotic_regression", event["tags"])
+            run_command("choose_mood 委屈", captured_path)
+            closed = run_command("confirm_recapture_rules", captured_path)
+            self.assertEqual(closed["captive_view"]["recapture_state"]["followup_history"][-1]["action"], "hypnotic_regression")
+            final_state = json.loads(captured_path.read_text(encoding="utf-8"))
+            ending_seed = _build_ending_seed(final_state)
+            self.assertEqual(ending_seed["ending_title"], "摇篮")
+            _finalize_preset_ending(final_state)
+            self.assertIn("宝宝张嘴", final_state["ending_text"])
+            self.assertIn("嘴角的银丝", final_state["ending_text"])
+            self.assertNotIn("精液的奶", final_state["ending_text"])
+            planned = run_command(
+                "plan_day action=feeding source=cook additive=fictional_sleep disclosed=hidden || "
+                "action=cleaning || action=rest contents=quiet_time",
+                captured_path,
+            )
+            captive_feeding = planned["captive_view"]["pending_event"]["event"]["feeding"]
+            captor_feeding = planned["captor_view"]["pending_event"]["event"]["feeding"]
+            self.assertEqual(captor_feeding["additive"], "semen")
+            self.assertNotIn("additive", captive_feeding)
+            feeding_prompt = build_assistant_prompt(planned, config)
+            self.assertIn("精液", feeding_prompt)
+            self.assertNotIn("安眠", feeding_prompt)
+            for mood in ("平静", "害羞", "疲惫"):
+                run_command(f"respond_action accept mood={mood}", captured_path)
+            run_command("night_action sleep", captured_path)
+            next_day = run_command("monitor_action none", captured_path)
+            self.assertEqual(next_day["captive_view"]["current_day"], 3)
+            disclosed = run_command(
+                "plan_day action=feeding source=takeout additive=none disclosed=told || "
+                "action=cleaning || action=rest contents=quiet_time",
+                captured_path,
+            )
+            self.assertEqual(disclosed["captor_view"]["pending_event"]["event"]["feeding"]["additive"], "semen")
+            self.assertEqual(disclosed["captive_view"]["pending_event"]["event"]["feeding"]["additive"], "精液")
+
+            captor_path = Path(directory) / "captor-no-hypnotic-regression.json"
+            run_command("new_game route=capture_assistant", captor_path)
+            run_command("schedule_escape_window day=1 hint=Player出去了 bait=钥匙在玄关", captor_path)
+            run_command("resolve_escape_choice escape", captor_path)
+            run_command("submit_process_reaction response=refuse mood=烦躁 process='被抓回。'", captor_path)
+            ruled = run_command("set_recapture_rules rules=double_lock,key_isolation", captor_path)
+            self.assertNotIn("hypnotic_regression", ruled["captor_view"]["pending_event"]["available_actions"])
+            self.assertFalse(run_command("choose_recapture_followup action=hypnotic_regression", captor_path)["ok"])
 
     def test_used_items_reveal_one_trace_per_use(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

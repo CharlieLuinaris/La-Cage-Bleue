@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import json
 import re
 import shlex
 
 
-def _pending_type(payload: dict) -> str:
+def _pending(payload: dict) -> dict:
     for key in ("captor_view", "captive_view", "state"):
         view = payload.get(key)
         if not isinstance(view, dict):
             continue
         pending = view.get("pending_event")
         if isinstance(pending, dict) and pending.get("type"):
-            return str(pending["type"])
-    return ""
+            return pending
+    return {}
+
+
+def _pending_type(payload: dict) -> str:
+    return str(_pending(payload).get("type") or "")
 
 
 def _process_block(text: str) -> str:
@@ -20,8 +25,61 @@ def _process_block(text: str) -> str:
     return str(match.group(1) or "").strip() if match else ""
 
 
+def _day_batch_command(reply_text: str, payload: dict) -> str:
+    pending = _pending(payload)
+    if str(pending.get("type") or "") != "day_batch_response":
+        return ""
+    raw = str(reply_text or "").strip()
+    matches = list(re.finditer(r"【\s*第\s*([123])\s*段\s*[：:]\s*([^】]*?)】", raw))
+    if len(matches) != 3 or [int(match.group(1)) for match in matches] != [1, 2, 3]:
+        return ""
+    pending_events = {
+        int(item.get("slot") or 0): item
+        for item in pending.get("events") or []
+        if isinstance(item, dict)
+    }
+    submitted: list[dict] = []
+    for index, match in enumerate(matches):
+        slot = int(match.group(1))
+        try:
+            tokens = shlex.split(str(match.group(2) or "").strip())
+        except ValueError:
+            tokens = str(match.group(2) or "").strip().split()
+        fields = {
+            key.strip(): raw_value.strip()
+            for token in tokens
+            if "=" in token
+            for key, raw_value in [token.split("=", 1)]
+        }
+        if not fields.get("response") or not fields.get("mood"):
+            return ""
+        chunk_end = matches[index + 1].start() if index + 1 < len(matches) else len(raw)
+        chunk = raw[match.end():chunk_end].strip()
+        process_match = re.search(rf"【\s*过程\s*{slot}\s*】\s*【【([\s\S]*?)】】", chunk)
+        process_text = str(process_match.group(1) or "").strip() if process_match else ""
+        feedback = chunk
+        if process_match:
+            feedback = (chunk[:process_match.start()] + chunk[process_match.end():]).strip()
+        requires_process = bool((pending_events.get(slot) or {}).get("requires_process"))
+        if requires_process and not process_text:
+            return ""
+        submitted.append({
+            "slot": slot,
+            "response": fields["response"],
+            "mood": fields["mood"],
+            "line": fields.get("line", ""),
+            "feedback": feedback if not requires_process else "",
+            "process": process_text,
+        })
+    encoded = json.dumps(submitted, ensure_ascii=False, separators=(",", ":"))
+    return f"submit_day_batch payload={shlex.quote(encoded)}"
+
+
 def directive_to_command(reply_text: str, payload: dict | None = None) -> str:
     text = str(reply_text or "").strip()
+    batch_command = _day_batch_command(text, payload or {})
+    if batch_command:
+        return batch_command
     match = re.match(r"^【\s*([^：:】]+?)\s*(?:[：:]\s*(.*?))?】", text, flags=re.S)
     if not match:
         return ""
