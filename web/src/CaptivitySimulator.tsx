@@ -2814,7 +2814,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
       setScreen("game");
       setFooterTab("status");
       setPlanSlots(defaultPlanSlots());
-      continueAutomaticSync(next, true, true);
+      continueAutomaticSync(next, false, true);
     });
   }
 
