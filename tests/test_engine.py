@@ -9,9 +9,18 @@ from captivity_simulator.configuration import render_placeholders
 from captivity_simulator.engine import _active_night_condition, _advance_after_day_event, _new_state, _resolve_event, run_command
 from captivity_simulator.prompts import build_assistant_prompt
 from captivity_simulator.protocol import directive_to_command
+from captivity_simulator.reference import get_reference, reference_tool_schema
 
 
 class EngineTest(unittest.TestCase):
+    def test_actions_reference_contains_complete_day_plan_catalog(self) -> None:
+        reference = get_reference("actions")
+        self.assertIn("actions", reference)
+        self.assertIn("training_contents", reference["training"])
+        self.assertIn("tools", reference["tools"])
+        self.assertIn("source", reference["feeding"])
+        self.assertIn("actions 会一次返回", reference_tool_schema()["function"]["description"])
+
     @staticmethod
     def _force_night(save_path: Path) -> None:
         state = json.loads(save_path.read_text(encoding="utf-8"))

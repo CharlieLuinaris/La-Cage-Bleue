@@ -140,7 +140,7 @@ def build_assistant_prompt(payload: dict[str, Any], config: dict[str, Any], mess
     if required_directive and required_directive not in (rule or ""):
         parts.append("回复格式：" + required_directive)
     if pending_type == "day_plan_choice":
-        parts.extend(["需要具体行动内容、调教、道具或喂食参数时，按需调用 captivity_simulator_reference。"])
+        parts.extend(["安排白天行动前只需调用一次 captivity_simulator_reference(category=actions)；该结果已经包含行动、调教、道具和喂食的全部可选项。"])
     if pending_type in {"process_write", "process_reaction_write"} and process_style:
         parts.extend(["", process_style])
     if extra_rules:
