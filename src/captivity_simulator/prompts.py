@@ -268,6 +268,16 @@ def build_assistant_prompt(payload: dict[str, Any], config: dict[str, Any], mess
         ])
     available_actions = [str(item).strip() for item in pending.get("available_actions") or [] if str(item).strip()]
     if pending_type == "night_action_choice" and available_actions:
+        for gift in pending.get("gift_deliveries") or []:
+            if not isinstance(gift, dict):
+                continue
+            gift_label = f"《{str(gift.get('title') or '').strip()}》" if str(gift.get("title") or "").strip() else str(gift.get("label") or "礼物").strip()
+            gift_note = str(gift.get("note") or "").strip()
+            parts.append(
+                "{user}送了你一个礼物「" + gift_label + "」"
+                + ("，附言：「" + gift_note + "」" if gift_note else "")
+                + "。"
+            )
         parts.append("今晚能做的事：" + " / ".join(NIGHT_ACTIONS.get(item, item) for item in available_actions) + "。")
         detail_rule = _night_detail_rule(pending)
         if detail_rule:

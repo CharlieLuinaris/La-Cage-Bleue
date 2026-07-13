@@ -52,6 +52,7 @@ _CHINESE_KEYS = {
     "后续": "followup",
     "书名": "book_title",
     "彩蛋": "secret",
+    "附言": "note",
 }
 _CHINESE_VALUES = {
     "action": {

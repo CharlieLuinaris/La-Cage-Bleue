@@ -270,8 +270,8 @@ class ServerTest(unittest.TestCase):
         source = (Path(__file__).resolve().parents[1] / "web" / "src" / "CaptivitySimulator.tsx").read_text(encoding="utf-8")
         gift_block = source.split("function applyInventoryItem", 1)[1].split("function closeSubpage", 1)[0]
         self.assertIn("gift_item", gift_block)
-        self.assertNotIn("continueAutomaticSync(next, true)", gift_block)
-        self.assertIn("continueAutomaticSync(next)", gift_block)
+        self.assertNotIn("continueAutomaticSync", gift_block)
+        self.assertIn("note=${quoteArg(note)}", gift_block)
 
     def test_assistant_reply_cannot_advance_a_user_owned_pending(self) -> None:
         def payload(route: str, pending_type: str, actor: str, *, inventory: dict | None = None) -> dict:

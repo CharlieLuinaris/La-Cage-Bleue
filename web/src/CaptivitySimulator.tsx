@@ -154,6 +154,7 @@ type CaptivityPending = {
   available_night_actions?: string[];
   detail_options?: Record<string, Record<string, string>>;
   status_flags?: StatusFlag[];
+  gift_deliveries?: GiftDelivery[];
   intensity_cap?: string;
   required_directive?: string;
   item_secret?: {
@@ -166,6 +167,20 @@ type CaptivityPending = {
   };
   event?: CaptivityEvent;
   events?: CaptivityEvent[];
+};
+
+type GiftDelivery = {
+  item?: string;
+  label?: string;
+  title?: string;
+  note?: string;
+  giver?: string;
+};
+
+type PendingGift = GiftDelivery & {
+  entries?: string[];
+  voice_line?: string;
+  queued_at?: string;
 };
 
 type DayPlanSpec = {
@@ -216,6 +231,8 @@ type CaptivityView = {
   escape_windows?: Array<Record<string, unknown>>;
   hidden_items?: Array<Record<string, unknown>>;
   inventory?: Record<string, boolean | undefined>;
+  pending_gifts?: PendingGift[];
+  night_gift_deliveries?: GiftDelivery[];
   inventory_secrets?: Record<string, {
     title?: string;
     content?: string;
@@ -2300,6 +2317,7 @@ function ToolSelectGrid({
 
 function InventoryWarehouse({
   activeItems,
+  pendingGifts,
   inventorySecrets,
   callBellVoice,
   disabled,
@@ -2310,14 +2328,18 @@ function InventoryWarehouse({
   inventorySecrets?: CaptivityView["inventory_secrets"];
   callBellVoice?: CaptivityView["call_bell_voice"];
   disabled?: boolean;
-  onGiftInventoryItem: (itemId: InventoryItemId, secret?: string, title?: string) => void;
+  pendingGifts?: PendingGift[];
+  onGiftInventoryItem: (itemId: InventoryItemId, secret?: string, title?: string, note?: string) => void;
   onRevokeInventoryItem: (itemId: InventoryItemId) => void;
 }) {
   const [selectedItem, setSelectedItem] = useState<InventoryItemId | "">("");
   const [itemSecretText, setItemSecretText] = useState("");
   const [bookTitle, setBookTitle] = useState("");
+  const [giftNote, setGiftNote] = useState("");
   const selectedOption = INVENTORY_OPTIONS.find((item) => item.id === selectedItem);
-  const selectedActive = selectedItem ? Boolean(activeItems[selectedItem]) : false;
+  const selectedDelivered = selectedItem ? Boolean(activeItems[selectedItem]) : false;
+  const selectedQueued = selectedItem ? pendingGifts?.some((item) => item.item === selectedItem) || false : false;
+  const selectedActive = selectedDelivered || selectedQueued;
   const progressiveCopy = selectedItem ? PROGRESSIVE_SECRET_COPY[selectedItem] : undefined;
   const selectedSecret = selectedItem ? inventorySecrets?.[selectedItem] : undefined;
   const selectedEntries = selectedSecret?.entries || [];
@@ -2328,10 +2350,11 @@ function InventoryWarehouse({
   function handleItemAction() {
     if (!selectedItem) return;
     if (selectedActive) onRevokeInventoryItem(selectedItem);
-    else onGiftInventoryItem(selectedItem, itemSecretText.trim() || undefined, bookTitle.trim() || undefined);
+    else onGiftInventoryItem(selectedItem, itemSecretText.trim() || undefined, bookTitle.trim() || undefined, giftNote.trim() || undefined);
     setSelectedItem("");
     setItemSecretText("");
     setBookTitle("");
+    setGiftNote("");
   }
 
   return (
@@ -2342,25 +2365,27 @@ function InventoryWarehouse({
       <div className="warehouse-grid">
         {INVENTORY_OPTIONS.map((item) => {
           const active = Boolean(activeItems[item.id]);
+          const queued = pendingGifts?.some((gift) => gift.item === item.id) || false;
           const itemTitle = item.id === "book" ? inventorySecrets?.book?.title?.trim() : "";
           return (
             <button
-              className={`warehouse-tile ${active ? "active" : ""} ${selectedItem === item.id ? "selected" : ""}`}
+              className={`warehouse-tile ${active || queued ? "active" : ""} ${selectedItem === item.id ? "selected" : ""}`}
               type="button"
               aria-pressed={active}
-              aria-label={`${item.label}，${active ? "已赠送" : "可赠送"}`}
+              aria-label={`${item.label}，${queued ? "待发放" : active ? "已赠送" : "可赠送"}`}
               disabled={disabled}
               key={item.id}
               onClick={() => {
                 setSelectedItem(item.id);
                 setItemSecretText("");
                 setBookTitle("");
+                setGiftNote("");
               }}
             >
               <PaintedIcon kind={item.id} />
               <span className="warehouse-name">{itemTitle ? `《${itemTitle}》` : item.label}</span>
               <span className="warehouse-use">{item.usage}</span>
-              <span className="warehouse-state">{active ? "已赠送" : "可赠送"}</span>
+              <span className="warehouse-state">{queued ? "待发放" : active ? "已赠送" : "可赠送"}</span>
             </button>
           );
         })}
@@ -2370,7 +2395,7 @@ function InventoryWarehouse({
           <div>
             <div className="warehouse-menu-title">{selectedOption.label}</div>
             <div className="warehouse-menu-use">{selectedOption.usage}</div>
-            <div className="warehouse-menu-state">{selectedActive ? "已赠送" : "未赠送"}</div>
+            <div className="warehouse-menu-state">{selectedQueued ? "今晚待发放" : selectedDelivered ? "已赠送" : "未赠送"}</div>
           </div>
           {!selectedActive ? (
             <>
@@ -2408,6 +2433,15 @@ function InventoryWarehouse({
               {progressiveCopy ? (
                 <div className="warehouse-menu-state">已填写 {draftEntryCount} 条，需要 {MIN_PROGRESSIVE_SECRET_ENTRIES}–{MAX_PROGRESSIVE_SECRET_ENTRIES} 条</div>
               ) : null}
+              <div className="warehouse-secret-label">附言（可选）</div>
+              <textarea
+                className="warehouse-voice-input"
+                value={giftNote}
+                maxLength={500}
+                disabled={disabled}
+                placeholder="这句话会在今晚发放礼物时一起出现"
+                onChange={(event) => setGiftNote(event.target.value)}
+              />
             </>
           ) : null}
           {selectedActive && (selectedItem === "call_bell" ? callBellVoice?.line : selectedSecret?.content || selectedEntries.length) ? (
@@ -2450,6 +2484,7 @@ function InventoryWarehouse({
                 setSelectedItem("");
                 setItemSecretText("");
                 setBookTitle("");
+                setGiftNote("");
               }}
             >取消</button>
           </div>
@@ -3767,29 +3802,35 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
     );
   }
 
-  function applyInventoryItem(itemId: InventoryItemId, enabled: boolean, secret = "", title = "") {
+  function applyInventoryItem(itemId: InventoryItemId, enabled: boolean, secret = "", title = "", note = "") {
     if (previewRole) {
       setPayload((previous) => {
         if (!previous) return previous;
         const previewCaptorView = previous.captor_view || {};
+        const queuedGifts = (previewCaptorView.pending_gifts || []).filter((gift) => gift.item !== itemId);
+        const nextInventorySecrets = { ...(previewCaptorView.inventory_secrets || {}) };
+        if (!enabled) {
+          nextInventorySecrets[itemId] = { content: "", revealed: false, configured_by: "", configured_at: "" };
+        }
         return {
           ...previous,
           captor_view: {
             ...previewCaptorView,
             inventory: {
               ...(previewCaptorView.inventory || {}),
-              [itemId]: enabled,
+              [itemId]: enabled ? Boolean(previewCaptorView.inventory?.[itemId]) : false,
             },
-            inventory_secrets: {
-              ...(previewCaptorView.inventory_secrets || {}),
-              [itemId]: enabled
-                ? { title: itemId === "book" ? title : "", content: secret || "默认彩蛋", revealed: false, configured_by: "user", configured_at: "preview-local" }
-                : { content: "", revealed: false, configured_by: "", configured_at: "" },
-            },
+            pending_gifts: enabled
+              ? [...queuedGifts, {
+                item: itemId,
+                label: INVENTORY_OPTIONS.find((item) => item.id === itemId)?.label || itemId,
+                title: itemId === "book" ? title : "",
+                note,
+              }]
+              : queuedGifts,
+            inventory_secrets: nextInventorySecrets,
             call_bell_voice: itemId === "call_bell"
-              ? (enabled
-                ? { line: secret, revealed: false, configured_by: "user", configured_at: "preview-local" }
-                : { line: "", revealed: false, configured_by: "", configured_at: "" })
+              ? (enabled ? previewCaptorView.call_bell_voice : { line: "", revealed: false, configured_by: "", configured_at: "" })
               : previewCaptorView.call_bell_voice,
           },
         };
@@ -3800,9 +3841,9 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
       enabled ? "正在赠送物品..." : "正在收回物品...",
       "STATUS: UPDATING INVENTORY",
       () => executeCaptivityCommand(
-        `${enabled ? "gift_item" : "revoke_item"} items=${itemId}${enabled && itemId === "book" ? ` book_title=${quoteArg(title)}` : ""}${enabled && itemId === "call_bell" ? ` voice_line=${quoteArg(secret)}` : enabled && secret ? ` secret=${quoteArg(secret)}` : ""}`,
+        `${enabled ? "gift_item" : "revoke_item"} items=${itemId}${enabled && itemId === "book" ? ` book_title=${quoteArg(title)}` : ""}${enabled && itemId === "call_bell" ? ` voice_line=${quoteArg(secret)}` : enabled && secret ? ` secret=${quoteArg(secret)}` : ""}${enabled && note ? ` note=${quoteArg(note)}` : ""}`,
       ),
-    ).then((next) => continueAutomaticSync(next));
+    );
   }
 
   function closeSubpage() {
@@ -4052,10 +4093,11 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         {role === "captor" ? (
           <InventoryWarehouse
             activeItems={inventoryActiveItems}
+            pendingGifts={view.pending_gifts || captorView.pending_gifts}
             inventorySecrets={view.inventory_secrets || captorView.inventory_secrets}
             callBellVoice={view.call_bell_voice || captorView.call_bell_voice}
             disabled={busy}
-            onGiftInventoryItem={(itemId, secret, title) => applyInventoryItem(itemId, true, secret, title)}
+            onGiftInventoryItem={(itemId, secret, title, note) => applyInventoryItem(itemId, true, secret, title, note)}
             onRevokeInventoryItem={(itemId) => applyInventoryItem(itemId, false)}
           />
         ) : (
@@ -6285,6 +6327,7 @@ function RuntimePanel({
         <NightActionPanel
           actions={availableNightActions}
           condition={nightCondition}
+          giftDeliveries={pending?.gift_deliveries || view.night_gift_deliveries || []}
           petRulePrompt={petRulePrompt}
           value={nightAction}
           detail={nightDetail}
@@ -6607,6 +6650,7 @@ function MoodPanel({
 function NightActionPanel({
   actions,
   condition,
+  giftDeliveries,
   petRulePrompt,
   value,
   detail,
@@ -6622,6 +6666,7 @@ function NightActionPanel({
 }: {
   actions: string[];
   condition: NightCondition | null;
+  giftDeliveries: GiftDelivery[];
   petRulePrompt: string;
   value: string;
   detail: string;
@@ -6638,6 +6683,19 @@ function NightActionPanel({
   return (
     <>
       <div className="panel-title">你的安排 <span className="sub">NIGHT</span></div>
+      {giftDeliveries.length ? (
+        <div className="action-card night-gift-card">
+          <div className="action-metadata">今晚收到的礼物</div>
+          {giftDeliveries.map((gift, index) => {
+            const giftLabel = gift.title ? `《${gift.title}》` : gift.label;
+            return (
+              <div className="event-sub" key={`${gift.item}-${index}`}>
+                {`{assistant}送了你一个礼物「${giftLabel}」${gift.note ? `，附言：「${gift.note}」` : ""}。`}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
       <div className="action-card">
         {condition?.label ? <div className="action-metadata">{condition.label}</div> : null}
         <div className="event-sub">

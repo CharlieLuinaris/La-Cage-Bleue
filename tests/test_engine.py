@@ -35,6 +35,15 @@ class EngineTest(unittest.TestCase):
         state["pending_event"] = None
         save_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
+    @staticmethod
+    def _enter_night_for_gift_delivery(save_path: Path) -> dict:
+        state = json.loads(save_path.read_text(encoding="utf-8"))
+        state["phase"] = "day"
+        state["day_action_count"] = 3
+        state["pending_event"] = None
+        save_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        return run_command("advance_day", save_path)
+
     def test_both_routes_start_with_generic_actor_ids(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             first = run_command("new_game route=captured_by_assistant", Path(directory) / "first.json")
@@ -124,8 +133,8 @@ class EngineTest(unittest.TestCase):
         write_payload = {"state": {"pending_event": {"type": "process_write"}}}
         self.assertEqual(directive_to_command("【过程】\n【【多段正文】】", write_payload), "submit_process 多段正文")
         self.assertEqual(
-            directive_to_command("【赠送物品：书 书名=夜航船 彩蛋='痕迹一 || 痕迹二'】", write_payload),
-            "gift_item items=book book_title=夜航船 secret='痕迹一 || 痕迹二'",
+            directive_to_command("【赠送物品：书 书名=夜航船 彩蛋='痕迹一 || 痕迹二' 附言='今晚再拆'】", write_payload),
+            "gift_item items=book book_title=夜航船 secret='痕迹一 || 痕迹二' note=今晚再拆",
         )
         self.assertEqual(
             directive_to_command("【抓回经过：规矩=加装双重门锁、禁止接触钥匙和门锁】\n【过程】\n【【抓回正文】】", write_payload),
@@ -212,6 +221,46 @@ class EngineTest(unittest.TestCase):
             first = captor["captor_view"]["pending_event"]["events"][0]
             self.assertFalse(first["requires_process"])
 
+    def test_gifts_queue_without_sync_and_deliver_for_both_routes_at_night(self) -> None:
+        config = {
+            "actors": {"user": "Player", "assistant": "Partner"},
+            "prompt": {"route_openings": {"capture_assistant": "你被 Player 留在这里。"}},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            assistant_captive_path = Path(directory) / "assistant-captive.json"
+            run_command("new_game route=capture_assistant", assistant_captive_path)
+            queued_for_assistant = run_command(
+                "gift_item items=notebook note='留给你的第一页'",
+                assistant_captive_path,
+            )
+            self.assertFalse(queued_for_assistant["captive_view"]["inventory"]["notebook"])
+            self.assertNotIn("pending_gifts", queued_for_assistant["captive_view"])
+            self.assertFalse(queued_for_assistant["captive_view"]["event_log"])
+            self.assertEqual(queued_for_assistant["captor_view"]["pending_gifts"][0]["note"], "留给你的第一页")
+
+            assistant_night = self._enter_night_for_gift_delivery(assistant_captive_path)
+            assistant_pending = assistant_night["captor_view"]["pending_event"]
+            self.assertEqual(assistant_pending["type"], "night_action_choice")
+            self.assertIn("diary", assistant_pending["available_actions"])
+            self.assertEqual(assistant_pending["gift_deliveries"][0]["note"], "留给你的第一页")
+            assistant_prompt = build_assistant_prompt(assistant_night, config)
+            self.assertIn("Player送了你一个礼物「日记本」，附言：「留给你的第一页」", assistant_prompt)
+            self.assertIn("写私密日记", assistant_prompt)
+
+            user_captive_path = Path(directory) / "user-captive.json"
+            run_command("new_game route=captured_by_assistant", user_captive_path)
+            queued_for_user = run_command(
+                "gift_item items=notebook note='晚上再打开'",
+                user_captive_path,
+            )
+            self.assertFalse(queued_for_user["captive_view"]["inventory"]["notebook"])
+            self.assertNotIn("pending_gifts", queued_for_user["captive_view"])
+            user_night = self._enter_night_for_gift_delivery(user_captive_path)
+            self.assertTrue(user_night["captive_view"]["inventory"]["notebook"])
+            self.assertEqual(user_night["captive_view"]["night_gift_deliveries"][0]["note"], "晚上再打开")
+            diary = run_command("night_action action=diary detail=record_day note='收到后的第一页'", user_captive_path)
+            self.assertTrue(diary["ok"])
+
     def test_voice_bell_replays_line_and_keeps_it_in_assistant_context(self) -> None:
         config = {
             "actors": {"user": "Player", "assistant": "Partner"},
@@ -222,8 +271,10 @@ class EngineTest(unittest.TestCase):
             run_command("new_game route=captured_by_assistant", save_path)
             gifted = run_command("gift_item items=call_bell voice_line='每次都要播放这句'", save_path)
             self.assertTrue(gifted["ok"])
+            self.assertFalse(gifted["captive_view"]["inventory"]["call_bell"])
 
-            self._force_night(save_path)
+            entered = self._enter_night_for_gift_delivery(save_path)
+            self.assertTrue(entered["captive_view"]["inventory"]["call_bell"])
             first = run_command("night_action action=ring_bell", save_path)
             self.assertEqual(first["captive_view"]["pending_event"]["type"], "bell_voice_reveal")
             self.assertEqual(first["captive_view"]["pending_event"]["event"]["bell_voice"]["line"], "每次都要播放这句")
@@ -364,12 +415,14 @@ class EngineTest(unittest.TestCase):
                 save_path,
             )
             self.assertTrue(gifted["ok"])
-            self.assertEqual(gifted["captor_view"]["inventory_secrets"]["book"]["title"], "夜航船")
-            self.assertEqual(gifted["captive_view"]["inventory_secrets"]["book"]["title"], "夜航船")
-            self.assertEqual(len(gifted["captor_view"]["inventory_secrets"]["book"]["entries"]), 5)
-            self.assertEqual(gifted["captive_view"]["inventory_secrets"]["book"]["revealed_count"], 0)
+            self.assertFalse(gifted["captive_view"]["inventory"]["book"])
+            self.assertEqual(gifted["captor_view"]["pending_gifts"][0]["title"], "夜航船")
 
-            self._force_night(save_path)
+            delivered = self._enter_night_for_gift_delivery(save_path)
+            self.assertEqual(delivered["captor_view"]["inventory_secrets"]["book"]["title"], "夜航船")
+            self.assertEqual(delivered["captive_view"]["inventory_secrets"]["book"]["title"], "夜航船")
+            self.assertEqual(len(delivered["captor_view"]["inventory_secrets"]["book"]["entries"]), 5)
+            self.assertEqual(delivered["captive_view"]["inventory_secrets"]["book"]["revealed_count"], 0)
             first = run_command("night_action action=read detail=inspect_margins", save_path)
             first_secret = first["captive_view"]["pending_event"]["item_secret"]
             self.assertEqual((first_secret["sequence"], first_secret["total"]), (1, 5))
