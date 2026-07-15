@@ -501,6 +501,38 @@ class FreezeTest(unittest.TestCase):
             self.assertTrue(result["ok"])
             self.assertIn("冻结", result["text"])
 
+    def test_freeze_safeword_variants(self) -> None:
+        # 安全词必须在任何写法下命中：繁体、繁简混写、带标点、夹在句子里。
+        variants = ["月夜凍結", "月夜冻結", "月夜冻结！", "  月夜冻结  ", "我说 月夜冻结 了", "月夜凍結。"]
+        for variant in variants:
+            with tempfile.TemporaryDirectory() as d:
+                p = Path(d) / "freeze_variant.json"
+                run_command("new_game", p)
+                result = run_command(variant, p)
+                self.assertTrue(result["ok"], f"safeword variant failed: {variant!r}")
+                state = json.loads(p.read_text(encoding="utf-8"))
+                self.assertTrue(state["frozen"], f"not frozen after: {variant!r}")
+
+    def test_freeze_safeword_overrides_other_command(self) -> None:
+        # 就算包在别的指令里，安全词也压倒一切。
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "freeze_override.json"
+            run_command("new_game", p)
+            result = run_command("choose_mood 平静 月夜冻结", p)
+            self.assertTrue(result["ok"])
+            state = json.loads(p.read_text(encoding="utf-8"))
+            self.assertTrue(state["frozen"])
+
+    def test_unfreeze_alias_traditional(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "unfreeze_trad.json"
+            run_command("new_game", p)
+            run_command("freeze", p)
+            result = run_command("解凍", p)
+            self.assertTrue(result["ok"])
+            state = json.loads(p.read_text(encoding="utf-8"))
+            self.assertFalse(state["frozen"])
+
     def test_status_allowed_while_frozen(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             p = Path(d) / "frozen_status.json"

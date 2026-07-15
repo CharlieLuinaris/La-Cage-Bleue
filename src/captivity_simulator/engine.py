@@ -927,9 +927,21 @@ def cmd(command: str = "", save_path: str | Path | None = None) -> str:
     return str(result.get("text") or "")
 
 
+_SAFEWORD_FOLD = str.maketrans({"凍": "冻", "結": "结"})
+
+
+def _is_safeword(command: str) -> bool:
+    # 月夜冻结是最高优先级停止信号：繁简混写、带标点、夹在句子里都必须命中。
+    folded = str(command or "").translate(_SAFEWORD_FOLD)
+    condensed = re.sub(r"[\W\s]+", "", folded)
+    return "月夜冻结" in condensed
+
+
 def run_command(command: str = "", save_path: str | Path | None = None) -> dict[str, Any]:
     path = Path(save_path) if save_path is not None else DEFAULT_SAVE_PATH
     action, args = _parse_command(command)
+    if _is_safeword(command):
+        action = "freeze"
     with _locked_save(path):
         if action == "new_game":
             previous_ending = {}
@@ -1229,9 +1241,14 @@ def _parse_command(command: str) -> tuple[str, dict[str, Any]]:
         "结束本局": "end_game",
         "freeze": "freeze",
         "月夜冻结": "freeze",
+        "月夜冻結": "freeze",
+        "月夜凍結": "freeze",
         "冻结": "freeze",
+        "冻結": "freeze",
+        "凍結": "freeze",
         "unfreeze": "unfreeze",
         "解冻": "unfreeze",
+        "解凍": "unfreeze",
     }
     action = aliases.get(first_key) or aliases.get(first) or "unknown"
     args = _key_values(parts[1:])
