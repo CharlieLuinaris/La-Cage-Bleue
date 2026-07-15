@@ -9,7 +9,7 @@
 :root {
   color-scheme: dark;
   font-family: Inter, system-ui, sans-serif;
-  background: #121212;
+  background: #0a0e1a;
 }
 
 html,
@@ -17,7 +17,7 @@ body,
 #root {
   min-height: 100%;
   margin: 0;
-  background: #121212;
+  background: #0a0e1a;
 }
 
 button,

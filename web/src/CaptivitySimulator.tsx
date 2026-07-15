@@ -4218,7 +4218,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         {wait.error ? (
           <>
             <div className="divider" />
-            <div style={{ color: "#aaa", fontSize: 12, lineHeight: 1.5 }}>{wait.error}</div>
+            <div style={{ color: "#8e9bb8", fontSize: 12, lineHeight: 1.5 }}>{wait.error}</div>
           </>
         ) : null}
         <div className="divider" />
@@ -4238,10 +4238,10 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
       <style>
         {`
         .captivity-game {
-            --pink: #EB79B0;
-            --black: #121212;
-            --white: #FFFFFF;
-            --gray: #2A2A2A;
+            --pink: #7aa2eb;
+            --black: #0a0e1a;
+            --white: #e0e4ef;
+            --gray: #1a2035;
             --safe-top: env(safe-area-inset-top, 0px);
             --safe-bottom: env(safe-area-inset-bottom, 0px);
             --footer-bar-height: calc(56px + var(--safe-bottom));
@@ -4312,7 +4312,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         }
         .captivity-game .bootstrap-copy {
             margin-top: 14px;
-            color: #777;
+            color: #6b7394;
             letter-spacing: 0.08em;
         }
         .captivity-game .selector-save-warning {
@@ -4320,7 +4320,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             margin: 0 auto 16px;
             padding: 10px 12px;
             border-left: 2px solid var(--pink);
-            color: #bbb;
+            color: #a0acc8;
             font-size: 11px;
             line-height: 1.6;
         }
@@ -4396,7 +4396,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             justify-content: center;
             align-items: center;
             text-align: center;
-            background: radial-gradient(circle at center, #222 0%, #121212 100%);
+            background: radial-gradient(circle at center, #141a2e 0%, #0a0e1a 100%);
         }
         .captivity-game .selector-title {
             display: flex;
@@ -4438,7 +4438,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         }
         .captivity-game .day-milestone-copy {
             margin: -18px 0 24px;
-            color: #8e888c;
+            color: #76809c;
             font-size: 11px;
             font-style: italic;
             line-height: 1.7;
@@ -4459,7 +4459,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         .captivity-game .time-chip {
             flex: 0 0 auto;
             border-bottom: 1px solid rgba(235, 121, 176, 0.42);
-            color: #aaa;
+            color: #8e9bb8;
             font-family: var(--font-display);
             font-style: italic;
             font-size: 11px;
@@ -4606,7 +4606,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         }
         .captivity-game .status-atmosphere-copy {
             margin: -8px 0 28px;
-            color: #aaa4a8;
+            color: #8e9ab5;
             font-size: 11px;
             font-style: italic;
             line-height: 1.7;
@@ -4623,7 +4623,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             margin-top: 24px;
         }
         .captivity-game .action-card {
-            background: #1a1a1a;
+            background: #111728;
             border-left: 3px solid var(--pink);
             padding: 15px;
             margin-bottom: 20px;
@@ -4631,7 +4631,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         .captivity-game .planner-choice-copy,
         .captivity-game .night-choice-copy,
         .captivity-game .runtime-bridge-copy {
-            color: #918b8f;
+            color: #7a84a0;
             font-size: 11px;
             font-style: italic;
             line-height: 1.7;
@@ -4686,7 +4686,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             display: inline-flex;
             align-items: center;
             gap: 9px;
-            color: #918b8f;
+            color: #7a84a0;
             font-family: var(--font-body);
             font-size: 10px;
             font-style: normal;
@@ -4726,7 +4726,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         }
         .captivity-game .action-metadata {
             font-size: 10px;
-            color: #666;
+            color: #5a6380;
             margin-bottom: 8px;
             text-transform: uppercase;
         }
@@ -4747,7 +4747,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             align-items: center;
             justify-content: space-between;
             gap: 12px;
-            background: #1a1a1a;
+            background: #111728;
             border: 0;
             border-left: 3px solid var(--pink);
             color: var(--white);
@@ -4826,20 +4826,20 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             margin-bottom: 20px;
         }
         .captivity-game .monitor-record-item {
-            background: #171717;
+            background: #101526;
             border-left: 1px solid rgba(235, 121, 176, 0.78);
             padding: 12px;
         }
         .captivity-game .monitor-live-scene {
             max-width: 420px;
             margin: 10px auto 0;
-            color: #b0a9ad;
+            color: #9aa5be;
             font-size: 10px;
             font-style: italic;
             line-height: 1.6;
         }
         .captivity-game .monitor-record-scene {
-            color: #8f898d;
+            color: #78829e;
             font-style: italic;
             line-height: 1.7;
         }
@@ -4850,13 +4850,13 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         }
         .captivity-game .event-sub {
             font-size: 12px;
-            color: #aaa;
+            color: #8e9bb8;
             line-height: 1.5;
             white-space: pre-wrap;
         }
         .captivity-game .night-condition-caption {
             margin-top: 6px;
-            color: #777;
+            color: #6b7394;
         }
         .captivity-game .process-text {
             font-family: var(--font-display);
@@ -4864,7 +4864,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             letter-spacing: 0;
             font-size: 12px;
             line-height: 1.65;
-            color: #ddd;
+            color: #c8cfe0;
             white-space: pre-wrap;
         }
         .captivity-game .btn-group {
@@ -5072,7 +5072,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             position: relative;
             z-index: 1;
             max-width: 100%;
-            color: #aaa;
+            color: #8e9bb8;
             font-size: 9px;
             line-height: 1.25;
             text-align: center;
@@ -5084,7 +5084,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             padding: 2px 5px;
             border: 1px solid rgba(255, 255, 255, 0.16);
             font-size: 10px;
-            color: #aaa;
+            color: #8e9bb8;
             text-align: center;
         }
         .captivity-game .warehouse-tile.active .warehouse-state {
@@ -5115,16 +5115,16 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         .captivity-game .warehouse-menu-state {
             margin-top: 3px;
             font-size: 10px;
-            color: #aaa;
+            color: #8e9bb8;
         }
         .captivity-game .warehouse-menu-use {
             margin-top: 4px;
-            color: #aaa;
+            color: #8e9bb8;
             font-size: 10px;
         }
         .captivity-game .warehouse-secret-label {
             margin-top: 10px;
-            color: #ccc;
+            color: #aab4ce;
             font-size: 10px;
             line-height: 1.5;
         }
@@ -5211,7 +5211,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         .captivity-game .scene-transition-body {
             max-width: 460px;
             margin-top: 16px;
-            color: #cfcacf;
+            color: #b8c0d6;
             font-size: 12px;
             line-height: 1.9;
             opacity: 0;
@@ -5269,7 +5269,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             padding: 24px 22px 20px;
             border: 0.5px solid rgba(255, 255, 255, 0.32);
             border-left: 3px solid var(--pink);
-            background: #151515;
+            background: #0e1324;
         }
         .captivity-game .item-reveal-dialog {
             animation: captivityItemRevealIn 0.34s ease both;
@@ -5435,7 +5435,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         }
         .captivity-game .bell-voice-kicker {
             margin-bottom: 8px;
-            color: #777;
+            color: #6b7394;
             font-size: 10px;
         }
         .captivity-game .bell-voice-line {
@@ -5508,7 +5508,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             gap: 5px;
         }
         .captivity-game .compact-field > span {
-            color: #aaa;
+            color: #8e9bb8;
             font-size: 9px;
             font-weight: 800;
             line-height: 1;
@@ -5552,7 +5552,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             padding: 22px 20px 20px;
             border: 0.5px solid #555;
             border-left: 3px solid var(--pink);
-            background: #151515;
+            background: #0e1324;
         }
         .captivity-game .identity-confirm-title { margin: 8px 0 14px; }
         .captivity-game .identity-confirm-copy { white-space: normal; line-height: 1.7; }
@@ -5563,7 +5563,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         .captivity-game .wait-scene-copy {
             max-width: 460px;
             margin-bottom: 18px;
-            color: #aaa4a8;
+            color: #8e9ab5;
             font-size: 12px;
             font-style: italic;
             line-height: 1.7;
@@ -5585,7 +5585,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             max-height: calc(100dvh - 44px);
             overflow-y: auto;
             padding: 24px 20px 20px;
-            background: #151515;
+            background: #0e1324;
             border: 0.5px solid #555;
             border-left: 3px solid var(--pink);
         }
@@ -5621,7 +5621,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             font-weight: 800;
         }
         .captivity-game .escape-recapture-question-overlay {
-            background: #000;
+            background: #060a14;
             backdrop-filter: none;
             -webkit-backdrop-filter: none;
             overflow: hidden;
@@ -5767,7 +5767,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             flex-direction: column;
             justify-content: center;
             padding: calc(var(--safe-top) + 40px) 40px calc(var(--safe-bottom) + 40px);
-            background: #000;
+            background: #060a14;
         }
         @keyframes captivityRecaptureTypeIn {
             from { opacity: 0; filter: blur(3px); transform: translateY(7px); }
@@ -5797,8 +5797,8 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
         .captivity-game .recapture-rules-review-item {
             padding: 13px 14px;
             border-left: 2px solid var(--pink);
-            background: #191919;
-            color: #eee;
+            background: #121830;
+            color: #d4daea;
             font-size: 13px;
             line-height: 1.45;
         }
@@ -5860,7 +5860,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             font-size: 6px;
             line-height: 1;
         }
-        .captivity-game .coord { font-size: 9px; color: #444; position: fixed; }
+        .captivity-game .coord { font-size: 9px; color: #3a4260; position: fixed; }
         .captivity-game .vertical-text {
             writing-mode: vertical-rl;
             position: fixed;
@@ -5868,7 +5868,7 @@ export function CaptivitySimulatorGameTab({ onBack }: { onBack: () => void }) {
             top: 50%;
             transform: translateY(-50%);
             font-size: 9px;
-            color: #444;
+            color: #3a4260;
             letter-spacing: 0.2em;
         }
         `}

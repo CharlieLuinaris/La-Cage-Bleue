@@ -948,6 +948,28 @@ def run_command(command: str = "", save_path: str | Path | None = None) -> dict[
             return _result(state, ["新局已开始。"], command=command or "new_game")
 
         state = _load_or_new(path)
+
+        if action == "freeze":
+            state["frozen"] = True
+            state["frozen_at"] = now_local_iso()
+            _append_event(state, "freeze", "月夜冻结——游戏已冻结。", tags=["freeze", "safeword"])
+            _save_state(path, state)
+            return _result(state, ["月夜冻结。游戏已冻结，所有行动暂停。输入「解冻」恢复。"], command=command or "freeze")
+
+        if action == "unfreeze":
+            if not state.get("frozen"):
+                _save_state(path, state)
+                return _result(state, ["游戏未处于冻结状态。"], command=command or "unfreeze", ok=False)
+            state["frozen"] = False
+            state.pop("frozen_at", None)
+            _append_event(state, "unfreeze", "冻结已解除，游戏恢复。", tags=["unfreeze"])
+            _save_state(path, state)
+            return _result(state, ["冻结已解除，游戏恢复。"], command=command or "unfreeze")
+
+        if state.get("frozen") and action not in {"open", "status", "new_game", "export_log"}:
+            _save_state(path, state)
+            return _result(state, ["游戏已冻结（月夜冻结）。输入「解冻」恢复，或「开局」重新开始。"], command=command or "", ok=False)
+
         _maybe_activate_escape_window(state)
         _maybe_create_night_action_choice_pending(state)
 
@@ -1205,6 +1227,11 @@ def _parse_command(command: str) -> tuple[str, dict[str, Any]]:
         "下一天": "advance_day",
         "end_game": "end_game",
         "结束本局": "end_game",
+        "freeze": "freeze",
+        "月夜冻结": "freeze",
+        "冻结": "freeze",
+        "unfreeze": "unfreeze",
+        "解冻": "unfreeze",
     }
     action = aliases.get(first_key) or aliases.get(first) or "unknown"
     args = _key_values(parts[1:])
@@ -4670,7 +4697,8 @@ def _result(state: dict[str, Any], lines: list[str], *, command: str, ok: bool =
     captive_view = _view_state(state, "captive")
     captor_view = _view_state(state, "captor")
     text = _render_text(state, lines)
-    return {
+    tts = _extract_tts_hint(state)
+    payload = {
         "ok": bool(ok),
         "game_id": GAME_ID,
         "command": command,
@@ -4705,8 +4733,25 @@ def _result(state: dict[str, Any], lines: list[str], *, command: str, ok: bool =
             "gift_item items=book book_title=书名 secret=五至八条使用痕迹",
             "revoke_item items=book",
             "export_log",
+            "freeze (月夜冻结)",
+            "unfreeze (解冻)",
         ],
     }
+    if tts:
+        payload["tts"] = tts
+    return payload
+
+
+def _extract_tts_hint(state: dict[str, Any]) -> dict[str, Any] | None:
+    pending = state.get("pending_event") if isinstance(state.get("pending_event"), dict) else None
+    if not pending or str(pending.get("type") or "") != "bell_voice_reveal":
+        return None
+    event = pending.get("event") if isinstance(pending.get("event"), dict) else {}
+    bell = event.get("bell_voice") if isinstance(event.get("bell_voice"), dict) else {}
+    line = str(bell.get("line") or "").strip()
+    if not line:
+        return None
+    return {"line": line, "source": "call_bell"}
 
 
 def _view_state(state: dict[str, Any], view: str) -> dict[str, Any]:
