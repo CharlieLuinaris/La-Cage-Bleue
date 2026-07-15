@@ -478,5 +478,152 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(late_water["bladder"]["pressure"], 2)
 
 
+class FreezeTest(unittest.TestCase):
+    def test_freeze_blocks_all_actions(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "freeze.json"
+            run_command("new_game route=captured_by_assistant", p)
+            result = run_command("freeze", p)
+            self.assertTrue(result["ok"])
+            self.assertIn("月夜冻结", result["text"])
+            state = json.loads(p.read_text(encoding="utf-8"))
+            self.assertTrue(state["frozen"])
+            self.assertIn("frozen_at", state)
+            blocked = run_command("choose_mood 平静", p)
+            self.assertFalse(blocked["ok"])
+            self.assertIn("冻结", blocked["text"])
+
+    def test_freeze_alias_月夜冻结(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "freeze_cn.json"
+            run_command("new_game", p)
+            result = run_command("月夜冻结", p)
+            self.assertTrue(result["ok"])
+            self.assertIn("冻结", result["text"])
+
+    def test_freeze_safeword_variants(self) -> None:
+        # 安全词必须在任何写法下命中：繁体、繁简混写、带标点、夹在句子里。
+        variants = ["月夜凍結", "月夜冻結", "月夜冻结！", "  月夜冻结  ", "我说 月夜冻结 了", "月夜凍結。"]
+        for variant in variants:
+            with tempfile.TemporaryDirectory() as d:
+                p = Path(d) / "freeze_variant.json"
+                run_command("new_game", p)
+                result = run_command(variant, p)
+                self.assertTrue(result["ok"], f"safeword variant failed: {variant!r}")
+                state = json.loads(p.read_text(encoding="utf-8"))
+                self.assertTrue(state["frozen"], f"not frozen after: {variant!r}")
+
+    def test_freeze_safeword_overrides_other_command(self) -> None:
+        # 就算包在别的指令里，安全词也压倒一切。
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "freeze_override.json"
+            run_command("new_game", p)
+            result = run_command("choose_mood 平静 月夜冻结", p)
+            self.assertTrue(result["ok"])
+            state = json.loads(p.read_text(encoding="utf-8"))
+            self.assertTrue(state["frozen"])
+
+    def test_unfreeze_alias_traditional(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "unfreeze_trad.json"
+            run_command("new_game", p)
+            run_command("freeze", p)
+            result = run_command("解凍", p)
+            self.assertTrue(result["ok"])
+            state = json.loads(p.read_text(encoding="utf-8"))
+            self.assertFalse(state["frozen"])
+
+    def test_status_allowed_while_frozen(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "frozen_status.json"
+            run_command("new_game", p)
+            run_command("freeze", p)
+            result = run_command("status", p)
+            self.assertTrue(result["ok"])
+
+    def test_new_game_allowed_while_frozen(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "frozen_new.json"
+            run_command("new_game", p)
+            run_command("freeze", p)
+            result = run_command("new_game", p)
+            self.assertTrue(result["ok"])
+
+    def test_unfreeze_resumes_game(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "unfreeze.json"
+            run_command("new_game", p)
+            run_command("freeze", p)
+            blocked = run_command("end_game", p)
+            self.assertFalse(blocked["ok"])
+            result = run_command("unfreeze", p)
+            self.assertTrue(result["ok"])
+            self.assertIn("恢复", result["text"])
+            state = json.loads(p.read_text(encoding="utf-8"))
+            self.assertFalse(state.get("frozen"))
+            ended = run_command("end_game", p)
+            self.assertTrue(ended["ok"])
+
+    def test_unfreeze_on_non_frozen_game_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "no_freeze.json"
+            run_command("new_game", p)
+            result = run_command("unfreeze", p)
+            self.assertFalse(result["ok"])
+
+    def test_freeze_persists_across_reload(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "persist.json"
+            run_command("new_game", p)
+            run_command("freeze", p)
+            blocked = run_command("plan_day action=feeding", p)
+            self.assertFalse(blocked["ok"])
+            self.assertIn("冻结", blocked["text"])
+
+    def test_gift_blocked_while_frozen(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "gift_freeze.json"
+            run_command("new_game", p)
+            run_command("freeze", p)
+            result = run_command("gift_item items=book", p)
+            self.assertFalse(result["ok"])
+            self.assertIn("冻结", result["text"])
+
+    def test_tts_hint_on_bell_voice_reveal(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "tts.json"
+            run_command("new_game route=captured_by_assistant", p)
+            state = json.loads(p.read_text(encoding="utf-8"))
+            state["call_bell_voice"] = {"line": "乖，过来。", "revealed": False, "configured_by": "assistant", "configured_at": ""}
+            state["inventory"]["call_bell"] = True
+            state["phase"] = "night"
+            state["day_action_count"] = 3
+            state["pending_event"] = None
+            state["mood"] = "平静"
+            state["mood_line"] = ""
+            p.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+            result = run_command("night_action ring_bell", p)
+            self.assertTrue(result["ok"])
+            self.assertIn("tts", result)
+            self.assertEqual(result["tts"]["line"], "乖，过来。")
+            self.assertEqual(result["tts"]["source"], "call_bell")
+
+    def test_no_tts_hint_on_normal_action(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "no_tts.json"
+            run_command("new_game route=captured_by_assistant", p)
+            result = run_command("status", p)
+            self.assertNotIn("tts", result)
+
+    def test_freeze_event_logged(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "log.json"
+            run_command("new_game", p)
+            result = run_command("freeze", p)
+            captor_log = result.get("captor_view", {}).get("event_log", [])
+            freeze_events = [e for e in captor_log if e.get("action") == "freeze"]
+            self.assertTrue(len(freeze_events) >= 1)
+
+
 if __name__ == "__main__":
     unittest.main()
