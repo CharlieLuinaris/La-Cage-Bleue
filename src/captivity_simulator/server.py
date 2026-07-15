@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -141,8 +142,8 @@ def main() -> None:
     config = load_config()
     server = config.get("server") if isinstance(config.get("server"), dict) else {}
     create_app().run(
-        host=str(server.get("host") or "127.0.0.1"),
-        port=int(server.get("port") or 5058),
+        host=str(os.environ.get("CAGE_HOST") or server.get("host") or "127.0.0.1"),
+        port=int(os.environ.get("CAGE_PORT") or server.get("port") or 5058),
         debug=False,
     )
 
