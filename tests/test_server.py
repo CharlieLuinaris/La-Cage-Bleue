@@ -398,5 +398,44 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(gift_response.get_json()["state"]["pending_event"]["type"], "action_response")
 
 
+class DebugLogTest(unittest.TestCase):
+    def test_log_is_disabled_by_default_and_writes_when_toggled(self) -> None:
+        from captivity_simulator import server as server_module
+
+        with tempfile.TemporaryDirectory() as directory:
+            log_dir = Path(directory) / "logs"
+            log_file = log_dir / "sync_assistant.log"
+
+            with patch.object(server_module, "DEBUG_LOG_DIR", log_dir), patch.object(
+                server_module, "DEBUG_LOG_FILE", log_file
+            ):
+                # 缺省关闭：写请求应被吞掉
+                server_module._debug_log({"event": "no_directive", "reply": "hello"})
+                self.assertFalse(log_file.exists())
+
+                # 打开开关：落盘一条完整记录，字段与正文都在
+                with patch.dict("os.environ", {"CAGE_DEBUG_LOG": "1"}):
+                    server_module._debug_log({
+                        "event": "no_directive",
+                        "save_id": "default",
+                        "pending_type": "day_plan_choice",
+                        "round": 0,
+                        "reply": "I can't help with this.",
+                        "directive": "",
+                    })
+                self.assertTrue(log_file.exists())
+                body = log_file.read_text(encoding="utf-8")
+                self.assertIn("no_directive", body)
+                self.assertIn("save_id='default'", body)
+                self.assertIn("pending_type='day_plan_choice'", body)
+                self.assertIn("--- reply ---", body)
+                self.assertIn("I can't help with this.", body)
+
+                # 假掉环境变量后再写入应被吞掉——不追加也不报错
+                length_after_first = log_file.stat().st_size
+                server_module._debug_log({"event": "no_directive", "reply": "second"})
+                self.assertEqual(log_file.stat().st_size, length_after_first)
+
+
 if __name__ == "__main__":
     unittest.main()
