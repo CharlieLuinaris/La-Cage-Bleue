@@ -211,6 +211,9 @@ def _day_batch_command(reply_text: str, payload: dict) -> str:
 
 def directive_to_command(reply_text: str, payload: dict | None = None) -> str:
     text = str(reply_text or "").strip()
+    if "【" in text and not text.startswith("【"):
+        # AI 常在指令块前带一句开场白；从第一个指令块开始解析，不因前置闲话作废整条指令。
+        text = text[text.index("【"):]
     batch_command = _day_batch_command(text, payload or {})
     if batch_command:
         return batch_command
