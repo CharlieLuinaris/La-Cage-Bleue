@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 from typing import Any
 from urllib import error, request
 
 from .configuration import render_placeholders
-from .reference import get_reference, reference_tool_schema
+from .reference import REFERENCE_CATEGORIES, get_reference, reference_tool_schema
 
 
 class AdapterError(RuntimeError):
@@ -106,6 +107,44 @@ def _request_assistant_anthropic(prompt: str, ai: dict[str, Any], channel_messag
     raise AdapterError("AI exceeded the reference-tool round limit.")
 
 
+def _reference_appendix() -> str:
+    # claude -p 不走适配层的工具往返，参考目录直接内联进 system，保持与工具路径同等的信息量。
+    sections = [get_reference(category) for category in REFERENCE_CATEGORIES]
+    return "【参考目录】\n" + "\n\n".join(sections)
+
+
+def _request_assistant_claude_cli(prompt: str, ai: dict[str, Any], channel_message: str) -> str:
+    cli_path = str(ai.get("cli_path") or "claude")
+    model = str(ai.get("model") or "")
+    timeout = int(ai.get("timeout_seconds") or 300)
+    command = [
+        cli_path,
+        "-p",
+        channel_message,
+        "--system-prompt",
+        f"{prompt}\n\n{_reference_appendix()}",
+        "--output-format",
+        "text",
+        "--disallowedTools",
+        "Bash Edit Write NotebookEdit WebFetch WebSearch",
+    ]
+    if model:
+        command.extend(["--model", model])
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        raise AdapterError(f"AI request failed: claude CLI timed out after {timeout}s.") from exc
+    except OSError as exc:
+        raise AdapterError(f"AI request failed: cannot run claude CLI ({exc}).") from exc
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "").strip()[-400:]
+        raise AdapterError(f"AI request failed: claude CLI exit {completed.returncode}: {detail}")
+    reply = (completed.stdout or "").strip()
+    if not reply:
+        raise AdapterError("AI response is empty.")
+    return reply
+
+
 def request_assistant(prompt: str, config: dict[str, Any], player_message: str = "") -> str:
     ai = config.get("ai") if isinstance(config.get("ai"), dict) else {}
     if not ai.get("enabled"):
@@ -119,6 +158,8 @@ def request_assistant(prompt: str, config: dict[str, Any], player_message: str =
     provider = str(ai.get("provider") or "openai").strip().lower()
     if provider == "anthropic":
         return _request_assistant_anthropic(prompt, ai, rendered_message)
+    if provider in ("claude-p", "claude_cli"):
+        return _request_assistant_claude_cli(prompt, ai, rendered_message)
     if provider != "openai":
         raise AdapterError(f"Unknown AI provider: {provider}.")
     base_url = str(ai.get("base_url") or "").rstrip("/")
