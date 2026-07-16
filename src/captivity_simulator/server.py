@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import datetime as _dt
 import os
 import re
 from pathlib import Path
+from typing import Any
 
 from flask import Flask, jsonify, request, send_from_directory
 
@@ -16,6 +18,38 @@ from .settings import DATA_DIR, PROJECT_ROOT
 
 
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
+DEBUG_LOG_DIR = DATA_DIR / "logs"
+DEBUG_LOG_FILE = DEBUG_LOG_DIR / "sync_assistant.log"
+DEBUG_LOG_MAX_BYTES = 512 * 1024  # 保守封顶——落盘用来诊断，不是长期审计
+
+
+def _debug_log_enabled() -> bool:
+    return str(os.environ.get("CAGE_DEBUG_LOG", "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _debug_log(record: dict[str, Any]) -> None:
+    if not _debug_log_enabled():
+        return
+    try:
+        DEBUG_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        if DEBUG_LOG_FILE.exists() and DEBUG_LOG_FILE.stat().st_size > DEBUG_LOG_MAX_BYTES:
+            DEBUG_LOG_FILE.replace(DEBUG_LOG_FILE.with_suffix(".log.1"))
+        stamp = _dt.datetime.now().isoformat(timespec="seconds")
+        parts = [f"[{stamp}] {record.get('event') or 'sync'}"]
+        for key in ("save_id", "pending_type", "sync_result", "round"):
+            if key in record:
+                parts.append(f"{key}={record[key]!r}")
+        header = " ".join(parts)
+        body_lines: list[str] = [header]
+        for key in ("player_message", "reply", "directive", "error"):
+            if key in record and record[key] is not None:
+                body_lines.append(f"--- {key} ---")
+                body_lines.append(str(record[key]))
+        body_lines.append("")
+        with DEBUG_LOG_FILE.open("a", encoding="utf-8") as handle:
+            handle.write("\n".join(body_lines) + "\n")
+    except Exception:  # pragma: no cover — 落日志本身炸了也不能拖垮同步接口
+        pass
 
 
 def _safe_save_id(value: str) -> str:
@@ -105,6 +139,14 @@ def create_app() -> Flask:
                     player_message=player_message if round_index == 0 else "",
                 )
             except AdapterError as exc:
+                _debug_log({
+                    "event": "adapter_error",
+                    "save_id": save_id,
+                    "pending_type": _pending_type(result),
+                    "round": round_index,
+                    "player_message": player_message if round_index == 0 else "",
+                    "error": str(exc),
+                })
                 response = _configured_result(project_payload(result, "user"), config)
                 response.update({"ok": False, "error": str(exc), "sync_result": "adapter_required"})
                 return jsonify(response), 409
@@ -112,7 +154,24 @@ def create_app() -> Flask:
             if command and not _assistant_has_pending(result) and not _is_out_of_band_command(command):
                 command = ""
             if not command:
+                _debug_log({
+                    "event": "no_directive",
+                    "save_id": save_id,
+                    "pending_type": _pending_type(result),
+                    "round": round_index,
+                    "player_message": player_message if round_index == 0 else "",
+                    "reply": reply_text,
+                    "directive": "",
+                })
                 break
+            _debug_log({
+                "event": "applied",
+                "save_id": save_id,
+                "pending_type": _pending_type(result),
+                "round": round_index,
+                "reply": reply_text,
+                "directive": command,
+            })
             result = run_command(command, save_path=_save_path(save_id))
             sync_result = "applied"
             if not result.get("ok") or not _assistant_has_pending(result):
