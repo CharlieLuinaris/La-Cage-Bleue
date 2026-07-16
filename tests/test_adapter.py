@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -189,6 +190,46 @@ class AnthropicAdapterTest(unittest.TestCase):
         with self.assertRaises(Exception) as ctx:
             request_assistant("当前事件", config)
         self.assertIn("Unknown AI provider", str(ctx.exception))
+
+
+class ClaudeCliAdapterTest(unittest.TestCase):
+    def test_claude_p_provider_invokes_print_mode(self) -> None:
+        captured: dict = {}
+
+        def fake_run(command, capture_output=False, text=False, timeout=0):
+            captured["command"] = command
+            captured["timeout"] = timeout
+            return subprocess.CompletedProcess(command, 0, stdout="【今日安排：...】\n", stderr="")
+
+        config = {
+            "actors": {"user": "Player", "assistant": "Partner"},
+            "ai": {"enabled": True, "provider": "claude-p", "model": "claude-fable-5"},
+        }
+        with patch("captivity_simulator.adapter.subprocess.run", side_effect=fake_run):
+            reply = request_assistant("当前事件", config, player_message="我想说的话")
+
+        self.assertEqual(reply, "【今日安排：...】")
+        command = captured["command"]
+        self.assertEqual(command[0], "claude")
+        self.assertEqual(command[1], "-p")
+        self.assertEqual(command[2], "（囚禁模拟器频道）\nPlayer：我想说的话")
+        system_prompt = command[command.index("--system-prompt") + 1]
+        self.assertTrue(system_prompt.startswith("当前事件"))
+        self.assertIn("白天行动", system_prompt)
+        self.assertIn("始终包含一份正常食物", system_prompt)
+        self.assertEqual(command[command.index("--model") + 1], "claude-fable-5")
+        self.assertIn("--disallowedTools", command)
+        self.assertEqual(captured["timeout"], 300)
+
+    def test_claude_p_failure_surfaces_stderr(self) -> None:
+        def fake_run(command, capture_output=False, text=False, timeout=0):
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="not logged in")
+
+        config = {"ai": {"enabled": True, "provider": "claude-p"}}
+        with patch("captivity_simulator.adapter.subprocess.run", side_effect=fake_run):
+            with self.assertRaises(Exception) as ctx:
+                request_assistant("当前事件", config)
+        self.assertIn("not logged in", str(ctx.exception))
 
 
 if __name__ == "__main__":
