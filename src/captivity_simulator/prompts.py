@@ -291,4 +291,5 @@ def build_assistant_prompt(payload: dict[str, Any], config: dict[str, Any], mess
         parts.extend(["", process_style])
     if extra_rules:
         parts.extend(["", *[str(item) for item in extra_rules if str(item).strip()]])
+    parts.extend(["", "回复直接以「【」指令块开始，指令块前不要写其他文字；想说的话放进指令内的台词或过程正文里。"])
     return str(render_placeholders("\n".join(parts).strip(), config))

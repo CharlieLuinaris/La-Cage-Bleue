@@ -121,6 +121,14 @@ class EngineTest(unittest.TestCase):
         self.assertNotIn("response=", prompt)
         self.assertNotIn("action_response", prompt)
 
+    def test_directive_parser_tolerates_preamble_before_first_block(self) -> None:
+        payload = {"state": {"pending_event": {"type": "escape_choice"}}}
+        self.assertEqual(
+            directive_to_command("好，我来处理这件事。\n\n【选择：尝试逃跑】", payload),
+            "resolve_escape_choice escape",
+        )
+        self.assertEqual(directive_to_command("完全没有指令块的闲聊。", payload), "")
+
     def test_directive_parser_uses_pending_context(self) -> None:
         payload = {"state": {"pending_event": {"type": "escape_choice"}}}
         self.assertEqual(directive_to_command("【选择：尝试逃跑】", payload), "resolve_escape_choice escape")
