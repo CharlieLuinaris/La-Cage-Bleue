@@ -97,5 +97,99 @@ class AdapterTest(unittest.TestCase):
         )
 
 
+class AnthropicAdapterTest(unittest.TestCase):
+    def test_anthropic_provider_resolves_reference_tool(self) -> None:
+        requests_seen: list[dict] = []
+        urls: list[str] = []
+        headers_seen: list[dict] = []
+        responses = iter([
+            {
+                "content": [{
+                    "type": "tool_use",
+                    "id": "toolu-1",
+                    "name": "captivity_simulator_reference",
+                    "input": {"分类": "喂食"},
+                }],
+                "stop_reason": "tool_use",
+            },
+            {"content": [{"type": "text", "text": "【今日安排：...】"}], "stop_reason": "end_turn"},
+        ])
+
+        def fake_urlopen(req, timeout=0):
+            urls.append(req.full_url)
+            headers_seen.append(dict(req.headers))
+            requests_seen.append(json.loads(req.data.decode("utf-8")))
+            return _Response(next(responses))
+
+        config = {
+            "ai": {
+                "enabled": True,
+                "provider": "anthropic",
+                "api_key_env": "TEST_CAPTIVITY_KEY",
+                "model": "claude-opus-4-8",
+            }
+        }
+        with patch.dict("os.environ", {"TEST_CAPTIVITY_KEY": "secret"}), patch(
+            "captivity_simulator.adapter.request.urlopen", side_effect=fake_urlopen
+        ):
+            reply = request_assistant("当前事件", config, player_message="我想说的话")
+
+        self.assertEqual(reply, "【今日安排：...】")
+        self.assertEqual(urls[0], "https://api.anthropic.com/v1/messages")
+        self.assertEqual(headers_seen[0].get("X-api-key"), "secret")
+        self.assertEqual(headers_seen[0].get("Anthropic-version"), "2023-06-01")
+        self.assertEqual(requests_seen[0]["system"], "当前事件")
+        self.assertEqual(requests_seen[0]["messages"][0]["role"], "user")
+        self.assertEqual(requests_seen[0]["messages"][0]["content"], "（囚禁模拟器频道）\n{user}：我想说的话")
+        self.assertEqual(requests_seen[0]["tools"][0]["name"], "captivity_simulator_reference")
+        self.assertNotIn("temperature", requests_seen[0])
+        followup = requests_seen[1]["messages"]
+        self.assertEqual(followup[1]["role"], "assistant")
+        tool_turn = followup[-1]
+        self.assertEqual(tool_turn["role"], "user")
+        self.assertEqual(tool_turn["content"][0]["type"], "tool_result")
+        self.assertEqual(tool_turn["content"][0]["tool_use_id"], "toolu-1")
+        self.assertIn("始终包含一份正常食物", tool_turn["content"][0]["content"])
+
+    def test_anthropic_provider_renders_actor_names_and_joins_text_blocks(self) -> None:
+        captured: dict = {}
+
+        def fake_urlopen(req, timeout=0):
+            captured.update(json.loads(req.data.decode("utf-8")))
+            return _Response({
+                "content": [
+                    {"type": "text", "text": "前半"},
+                    {"type": "text", "text": "后半"},
+                ],
+                "stop_reason": "end_turn",
+            })
+
+        config = {
+            "actors": {"user": "Player", "assistant": "Partner"},
+            "ai": {
+                "enabled": True,
+                "provider": "anthropic",
+                "base_url": "https://example.invalid",
+                "api_key_env": "TEST_CAPTIVITY_KEY",
+                "model": "claude-opus-4-8",
+            },
+        }
+        with patch.dict("os.environ", {"TEST_CAPTIVITY_KEY": "secret"}), patch(
+            "captivity_simulator.adapter.request.urlopen", side_effect=fake_urlopen
+        ):
+            self.assertEqual(request_assistant("当前事件", config), "前半后半")
+
+        self.assertEqual(
+            captured["messages"][0]["content"],
+            "（囚禁模拟器频道系统提示）Player没有发文字消息给你",
+        )
+
+    def test_unknown_provider_is_rejected(self) -> None:
+        config = {"ai": {"enabled": True, "provider": "carrier-pigeon", "model": "m"}}
+        with self.assertRaises(Exception) as ctx:
+            request_assistant("当前事件", config)
+        self.assertIn("Unknown AI provider", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
